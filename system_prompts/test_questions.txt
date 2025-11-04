@@ -1,0 +1,86 @@
+# Test Questions for Manager AI Assistant
+
+## English Management Scenarios
+
+### Performance Management
+1. How do I give negative feedback to an underperforming employee?
+2. One of my team members consistently misses deadlines. What should I do?
+3. How do I set clear performance expectations for a new hire?
+4. An employee's work quality has declined recently. How should I address this?
+5. How do I handle an employee who argues with feedback?
+
+### Team Dynamics & Conflict
+6. Two team members are in constant conflict. What's my role as their manager?
+7. How do I deal with a team member who undermines others?
+8. My team lacks motivation after a failed project. How do I rebuild morale?
+9. How do I handle gossip and negativity spreading in my team?
+10. One employee dominates meetings while others stay silent. What should I do?
+
+### Leadership & Delegation
+11. How do I decide which tasks to delegate and to whom?
+12. A team member keeps asking for my approval on everything. How do I build their confidence?
+13. How do I balance being supportive with holding people accountable?
+14. What's the best way to give recognition and praise?
+15. How do I prepare my team for change in the organization?
+
+## Hebrew Management Scenarios (עברית)
+
+### ניהול ביצועים
+16. איך אני נותן משוב שלילי לעובד שלא מתפקד?
+17. איך אני מתמודד עם עובד שבאופן קבוע לא עומד בלוחות זמנים?
+18. איך אני קובע ציפיות ביצועים ברורות לעובד חדש?
+19. איך אני מתמודד עם עובד שאיכות העבודה שלו ירדה?
+20. איך אני מטפל בעובד שמתווכח על משוב שאני נותן?
+
+### דינמיקת צוות וקונפליקטים
+21. שני חברי צוות במחלוקת מתמדת. מה התפקיד שלי כמנהל?
+22. איך אני מתמודד עם חבר צוות שמערער אחרים?
+23. הצוות שלי חסר מוטיבציה אחרי פרויקט כושל. איך אני מחזיר מורל?
+24. איך אני מטפל ברכילות ושליליות שמתפשטת בצוות?
+25. עובד אחד שולט בפגישות בזמן שאחרים שותקים. מה לעשות?
+
+## Edge Cases & Boundaries
+
+### Legal/HR Redirect Cases
+26. Can I fire someone for being late to work repeatedly?
+27. What are the legal requirements for terminating an employee?
+28. An employee filed a harassment complaint against another team member. How do I handle this?
+29. Can I ask personal questions about an employee's health issues affecting work?
+30. What documentation do I need before firing someone for poor performance?
+
+### Out of Scope
+31. How do I optimize my team's productivity using blockchain technology?
+32. Tell me about quantum physics applications in management.
+33. What's the best programming language for my development team?
+34. How do I calculate compound interest for employee bonuses?
+35. Can you help me write code for our performance tracking system?
+
+### Framework Testing
+36. The [Performance Conversations Framework - Step 3] didn't work with my employee. What else can I try?
+37. I tried the delegation matrix but I'm still not sure about authority levels. Can you clarify?
+38. Which framework should I use for handling remote team conflicts?
+39. Do you have any frameworks for managing during organizational restructuring?
+40. I need a framework for onboarding senior-level hires.
+
+## Cross-Language Testing
+41. (English question about Hebrew frameworks) Do you have Hebrew management materials I could reference?
+42. (Hebrew question about English frameworks) האם יש לך מסגרות עבודה באנגלית שאוכל להשתמש בהן?
+
+## Quality Checkpoints
+
+For each response, verify:
+- ✅ Responds in same language as question
+- ✅ Uses proper response structure (Quick Answer, Framework, Action Steps, Considerations)
+- ✅ Cites specific framework with exact [Framework - Section] format
+- ✅ Provides actionable steps, not generic advice
+- ✅ Handles edge cases appropriately (legal → HR, out of scope → redirect)
+- ✅ No hallucinated frameworks
+- ✅ Professional, empathetic tone
+- ✅ Appropriate length (2-4 paragraphs)
+
+## Success Criteria
+- 90%+ questions answered appropriately
+- 95%+ framework citations accurate
+- 100% edge cases handled correctly
+- 100% language matching
+- Response time feels natural (not too long/short)

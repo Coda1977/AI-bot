@@ -1,0 +1,1 @@
+# Manager AI Assistant - Smart Materials Ingestion System

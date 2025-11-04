@@ -1,0 +1,28 @@
+# Smart Materials Ingestion System
+# Document Processing
+python-docx>=0.8.11          # Word document processing
+PyPDF2>=3.0.1               # PDF processing
+python-pptx>=0.6.21         # PowerPoint processing
+markdown>=3.5                # Markdown processing
+
+# AI Providers
+anthropic>=0.8.0            # Claude API
+openai>=1.3.0               # OpenAI API
+google-generativeai>=0.3.0  # Gemini API
+
+# Vector Database
+chromadb>=0.4.15            # Embedded vector database
+
+# Configuration & Utilities
+python-dotenv>=1.0.0        # Environment variables
+pydantic>=2.5.0             # Data validation
+click>=8.1.0                # CLI interface
+rich>=13.7.0                # Beautiful console output
+tiktoken>=0.5.0             # Token counting
+
+# Slack Bot (for future use)
+slack-bolt>=1.18.0          # Slack SDK
+
+# Testing & Quality
+pytest>=7.4.0              # Testing framework
+pytest-asyncio>=0.21.0     # Async testing
