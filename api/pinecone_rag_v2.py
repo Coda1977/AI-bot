@@ -181,10 +181,11 @@ async def health_check():
 
         return {
             "status": "healthy",
-            "service": "Management Knowledge RAG API v2.1",
-            "version": "2.1.0",
+            "service": "Management Knowledge RAG API v2.1 FIXED",
+            "version": "2.1.1",
             "api_version": "2025",
-            "deployed_at": "2025-11-05T16:10:00Z",
+            "deployed_at": "2025-11-05T16:15:00Z",
+            "fix_status": "MANUAL EMBEDDINGS DEPLOYED",
             "pinecone": {
                 "connected": True,
                 "total_vectors": stats.total_vector_count,
