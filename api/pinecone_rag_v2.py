@@ -57,9 +57,9 @@ class AskResponse(BaseModel):
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Management Knowledge RAG API v2.0",
-    description="Current Pinecone API (2025) with integrated embeddings for management knowledge",
-    version="2.0.0"
+    title="Management Knowledge RAG API v2.1",
+    description="Fixed Pinecone API (2025) with manual embeddings for management knowledge",
+    version="2.1.0"
 )
 
 # CORS middleware
@@ -181,9 +181,10 @@ async def health_check():
 
         return {
             "status": "healthy",
-            "service": "Management Knowledge RAG API v2.0",
-            "version": "2.0.1",
+            "service": "Management Knowledge RAG API v2.1",
+            "version": "2.1.0",
             "api_version": "2025",
+            "deployed_at": "2025-11-05T16:10:00Z",
             "pinecone": {
                 "connected": True,
                 "total_vectors": stats.total_vector_count,
