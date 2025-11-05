@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/index.py": {
-      "runtime": "python3.9"
+      "runtime": "@vercel/python"
     }
   },
   "rewrites": [
@@ -9,10 +9,5 @@
       "source": "/api/(.*)",
       "destination": "/api/index.py"
     }
-  ],
-  "build": {
-    "env": {
-      "PYTHONPATH": "/var/task"
-    }
-  }
+  ]
 }
