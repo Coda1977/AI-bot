@@ -1,373 +1,445 @@
 #!/usr/bin/env python3
 """
-Vercel-optimized RAG API Service for Management Knowledge Base
-Adapted for serverless deployment
+Pinecone RAG API v2.0 - Updated for 2025 API
+Uses current Pinecone SDK with integrated embeddings and modern patterns
 """
-
 import json
 import os
 import logging
 from typing import Dict, List, Optional, Any
 from pathlib import Path
+import time
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-import chromadb
-from chromadb.config import Settings
-import anthropic
-import openai
+from pydantic import BaseModel
+import uvicorn
 
-# Configure logging for Vercel
+# Global variables for caching
+_pinecone_client = None
+_pinecone_index = None
+_anthropic_client = None
+_openai_client = None
+_knowledge_loaded = False
+
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="Management Knowledge RAG API",
-    description="Semantic search and AI responses for management frameworks and guidance",
-    version="1.0.0"
-)
-
-# Add CORS middleware for Custom GPT Actions
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://chat.openai.com", "https://chatgpt.com"],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"],
-)
-
-# Pydantic models for API requests/responses
+# Pydantic models
 class SearchRequest(BaseModel):
-    query: str = Field(..., description="Search query for management knowledge")
-    domain: Optional[str] = Field(None, description="Management domain filter", enum=["coaching", "feedback", "delegation", "performance", "leadership", "communication"])
-    detail_level: Optional[str] = Field("detailed", description="Response detail level", enum=["quick", "detailed", "comprehensive"])
-    max_results: Optional[int] = Field(5, description="Maximum number of search results", ge=1, le=20)
+    query: str
+    top_k: int = 5
+    namespace: str = "management-knowledge"
 
 class SearchResult(BaseModel):
+    id: str
     content: str
-    source_file: str
-    relevance_score: float
     metadata: Dict[str, Any]
+    score: float
 
 class SearchResponse(BaseModel):
     results: List[SearchResult]
-    query: str
     total_results: int
+    query: str
 
 class AskRequest(BaseModel):
-    query: str = Field(..., description="Question about management")
-    domain: Optional[str] = Field(None, description="Management domain filter")
-    detail_level: Optional[str] = Field("detailed", description="Response detail level")
-    context_size: Optional[int] = Field(5, description="Number of knowledge chunks to use", ge=1, le=10)
+    question: str
+    top_k: int = 5
+    ai_provider: Optional[str] = None
+    namespace: str = "management-knowledge"
 
 class AskResponse(BaseModel):
     answer: str
     sources: List[SearchResult]
-    query: str
     ai_provider: str
+    question: str
 
-# Global variables for clients and database
-_chroma_client = None
-_collection = None
-_anthropic_client = None
-_openai_client = None
-_chunks_data = None
+# Initialize FastAPI app
+app = FastAPI(
+    title="Management Knowledge RAG API v2.0",
+    description="Current Pinecone API (2025) with integrated embeddings for management knowledge",
+    version="2.0.0"
+)
 
-def get_clients():
-    """Initialize and return clients (singleton pattern for serverless)"""
-    global _chroma_client, _collection, _anthropic_client, _openai_client, _chunks_data
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    if _chroma_client is None:
+def get_pinecone_client():
+    """Initialize Pinecone client using current 2025 API"""
+    global _pinecone_client
+    if _pinecone_client is None:
         try:
-            # Initialize ChromaDB in memory for serverless
-            _chroma_client = chromadb.Client(
-                Settings(
-                    anonymized_telemetry=False,
-                    is_persistent=False
-                )
-            )
-            logger.info("ChromaDB client initialized")
+            from pinecone import Pinecone  # Current 2025 import
+            api_key = os.getenv('PINECONE_API_KEY')
+            if not api_key:
+                raise ValueError("PINECONE_API_KEY environment variable not set")
+            _pinecone_client = Pinecone(api_key=api_key)
+            logger.info("Pinecone client initialized with 2025 API")
         except Exception as e:
-            logger.error(f"Error initializing ChromaDB: {e}")
-            raise HTTPException(status_code=500, detail="Database initialization failed")
+            logger.error(f"Failed to initialize Pinecone client: {e}")
+            raise HTTPException(status_code=500, detail=f"Pinecone initialization failed: {e}")
+    return _pinecone_client
 
-    if _anthropic_client is None and os.getenv("ANTHROPIC_API_KEY"):
+def get_pinecone_index():
+    """Get Pinecone index using current 2025 API"""
+    global _pinecone_index
+    if _pinecone_index is None:
         try:
-            _anthropic_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-            logger.info("Anthropic client initialized")
+            client = get_pinecone_client()
+            index_name = os.getenv('PINECONE_INDEX_NAME', 'management-knowledge-v2')
+            _pinecone_index = client.Index(index_name)
+            logger.info(f"Connected to Pinecone index: {index_name}")
         except Exception as e:
-            logger.error(f"Error initializing Anthropic: {e}")
+            logger.error(f"Failed to connect to Pinecone index: {e}")
+            raise HTTPException(status_code=500, detail=f"Pinecone index connection failed: {e}")
+    return _pinecone_index
 
-    if _openai_client is None and os.getenv("OPENAI_API_KEY"):
+def get_anthropic_client():
+    """Initialize Anthropic client"""
+    global _anthropic_client
+    if _anthropic_client is None:
         try:
-            _openai_client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            logger.info("OpenAI client initialized")
+            import anthropic
+            api_key = os.getenv('ANTHROPIC_API_KEY')
+            if api_key:
+                _anthropic_client = anthropic.Anthropic(api_key=api_key)
+                logger.info("Anthropic client initialized")
+            else:
+                logger.warning("ANTHROPIC_API_KEY not found")
         except Exception as e:
-            logger.error(f"Error initializing OpenAI: {e}")
+            logger.error(f"Failed to initialize Anthropic client: {e}")
+    return _anthropic_client
 
-    return _chroma_client, _collection, _anthropic_client, _openai_client
+def get_openai_client():
+    """Initialize OpenAI client"""
+    global _openai_client
+    if _openai_client is None:
+        try:
+            import openai
+            api_key = os.getenv('OPENAI_API_KEY')
+            if api_key:
+                _openai_client = openai.OpenAI(api_key=api_key)
+                logger.info("OpenAI client initialized")
+            else:
+                logger.warning("OPENAI_API_KEY not found")
+        except Exception as e:
+            logger.error(f"Failed to initialize OpenAI client: {e}")
+    return _openai_client
 
-def load_knowledge_base():
-    """Load knowledge base from JSON file"""
-    global _collection, _chunks_data
-
-    chroma_client, collection, anthropic_client, openai_client = get_clients()
-
-    if _collection is not None:
-        return _collection
+async def ensure_knowledge_loaded():
+    """Ensure knowledge base is loaded into Pinecone using 2025 API"""
+    global _knowledge_loaded
+    if _knowledge_loaded:
+        return
 
     try:
-        # Load chunks data if not already loaded
-        if _chunks_data is None:
-            # Try compressed gzipped version first
-            chunks_file = Path("chunks_compressed.json.gz")
-            if chunks_file.exists():
-                import gzip
-                with gzip.open(chunks_file, 'rt', encoding='utf-8') as f:
-                    data = json.load(f)
-                logger.info("Loaded compressed knowledge base")
+        # Check if index has data
+        index = get_pinecone_index()
+        stats = index.describe_index_stats()
+        namespace = os.getenv('PINECONE_NAMESPACE', 'management-knowledge')
+
+        # Check if our namespace has data
+        namespace_stats = stats.namespaces.get(namespace, {})
+        if namespace_stats.get('vector_count', 0) > 0:
+            logger.info(f"Knowledge base already loaded: {namespace_stats.get('vector_count')} vectors in namespace '{namespace}'")
+            _knowledge_loaded = True
+            return
+
+        # Load knowledge base from file
+        knowledge_file = Path("output/chromadb_data/chunks_data.json")
+        if not knowledge_file.exists():
+            # Try alternative paths
+            alt_paths = [
+                Path("../output/chromadb_data/chunks_data.json"),
+                Path("chunks_data.json"),
+            ]
+            for alt_path in alt_paths:
+                if alt_path.exists():
+                    knowledge_file = alt_path
+                    break
             else:
-                # Fallback to regular compressed version
-                chunks_file = Path("chunks_compressed.json")
-                if chunks_file.exists():
-                    with open(chunks_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    logger.info("Loaded regular compressed knowledge base")
-                else:
-                    # Final fallback to original
-                    chunks_file = Path("chunks_data.json")
-                    if not chunks_file.exists():
-                        raise HTTPException(status_code=500, detail="Knowledge base file not found")
-                    with open(chunks_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    logger.info("Loaded original knowledge base")
+                raise HTTPException(status_code=500, detail="Knowledge base file not found")
 
-            _chunks_data = data.get('chunks', [])
-            logger.info(f"Loaded {len(_chunks_data)} chunks")
+        logger.info(f"Loading knowledge base from: {knowledge_file}")
+        with open(knowledge_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
 
-        if not _chunks_data:
+        chunks = data.get('chunks', [])
+        if not chunks:
             raise HTTPException(status_code=500, detail="No chunks found in knowledge base")
 
-        # Create ChromaDB collection
-        _collection = chroma_client.get_or_create_collection(
-            name="management_knowledge",
-            metadata={"description": "Management frameworks and guidance"}
-        )
+        logger.info(f"Processing {len(chunks)} chunks for Pinecone upload using 2025 API")
 
-        # Prepare data for ChromaDB
-        ids = []
-        documents = []
-        metadatas = []
+        # Prepare records for new API format
+        records = []
+        for chunk in chunks:
+            # Prepare metadata (keep essential fields)
+            metadata = {
+                'source_file': chunk['metadata'].get('source_file', 'Unknown'),
+                'framework': chunk['metadata'].get('framework', 'Unknown'),
+                'category': chunk['metadata'].get('category', 'General'),
+                'section': chunk['metadata'].get('section', ''),
+                'chunk_type': chunk['metadata'].get('chunk_type', 'unknown'),
+                'word_count': chunk.get('word_count', 0),
+                'language': chunk['metadata'].get('language', 'unknown')
+            }
 
-        for chunk in _chunks_data:
-            ids.append(chunk['id'])
-            documents.append(chunk['content'])
-            # Handle both compressed and original formats
-            if 'metadata' in chunk:
-                metadatas.append(chunk['metadata'])
-            else:
-                # Compressed format
-                metadatas.append({
-                    'source_file': chunk.get('source_file', 'Unknown'),
-                    'framework': chunk.get('framework', 'Unknown'),
-                    'category': chunk.get('category', 'General')
-                })
+            # Create record in new format
+            records.append({
+                '_id': chunk['id'],
+                'content': chunk['content'],  # This will be embedded automatically
+                **metadata
+            })
 
-        # Add to ChromaDB in batches (smaller for serverless)
-        batch_size = 50
-        for i in range(0, len(ids), batch_size):
-            batch_ids = ids[i:i+batch_size]
-            batch_docs = documents[i:i+batch_size]
-            batch_metadata = metadatas[i:i+batch_size]
+        # Upload in batches using new upsert_records method
+        batch_size = 100
+        total_uploaded = 0
 
-            _collection.add(
-                ids=batch_ids,
-                documents=batch_docs,
-                metadatas=batch_metadata
-            )
+        for i in range(0, len(records), batch_size):
+            batch = records[i:i + batch_size]
 
-        logger.info(f"Loaded {len(_chunks_data)} chunks into ChromaDB")
-        return _collection
+            try:
+                # Use new upsert_records method with namespace
+                index.upsert_records(namespace, batch)
+                total_uploaded += len(batch)
+                logger.info(f"Uploaded batch {i//batch_size + 1}: {total_uploaded}/{len(records)} records")
+
+                # Add small delay to avoid rate limits
+                time.sleep(1)
+
+            except Exception as e:
+                logger.error(f"Failed to upload batch {i//batch_size + 1}: {e}")
+                continue
+
+        logger.info(f"Successfully uploaded {total_uploaded} records to Pinecone namespace '{namespace}'")
+
+        # Wait for indexing
+        logger.info("Waiting 10 seconds for indexing to complete...")
+        time.sleep(10)
+
+        _knowledge_loaded = True
 
     except Exception as e:
-        logger.error(f"Error loading knowledge base: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to load knowledge base: {str(e)}")
-
-@app.get("/api", response_model=Dict[str, str])
-async def root():
-    """Health check endpoint"""
-    return {
-        "status": "running",
-        "service": "Management Knowledge RAG API",
-        "version": "1.0.0",
-        "platform": "Vercel"
-    }
+        logger.error(f"Failed to load knowledge base: {e}")
+        raise HTTPException(status_code=500, detail=f"Knowledge base loading failed: {e}")
 
 @app.get("/api/health")
 async def health_check():
-    """Detailed health check"""
+    """Health check endpoint"""
     try:
-        collection = load_knowledge_base()
-        chroma_client, _, anthropic_client, openai_client = get_clients()
+        # Check Pinecone connection
+        index = get_pinecone_index()
+        stats = index.describe_index_stats()
+        namespace = os.getenv('PINECONE_NAMESPACE', 'management-knowledge')
 
-        health_status = {
-            "status": "healthy",
-            "chromadb": collection is not None,
-            "anthropic": anthropic_client is not None,
-            "openai": openai_client is not None,
-            "knowledge_base_size": collection.count() if collection else 0,
-            "platform": "Vercel"
-        }
-        return health_status
-    except Exception as e:
-        logger.error(f"Health check error: {e}")
+        # Check AI providers
+        anthropic_available = get_anthropic_client() is not None
+        openai_available = get_openai_client() is not None
+
+        # Get namespace stats
+        namespace_stats = stats.namespaces.get(namespace, {})
+
         return {
-            "status": "error",
+            "status": "healthy",
+            "service": "Management Knowledge RAG API v2.0",
+            "version": "2.0.0",
+            "api_version": "2025",
+            "pinecone": {
+                "connected": True,
+                "total_vectors": stats.total_vector_count,
+                "namespace": namespace,
+                "namespace_vectors": namespace_stats.get('vector_count', 0),
+                "index_name": os.getenv('PINECONE_INDEX_NAME', 'management-knowledge-v2'),
+                "embedding_model": "integrated (llama-text-embed-v2 or similar)"
+            },
+            "ai_providers": {
+                "anthropic": anthropic_available,
+                "openai": openai_available,
+                "preferred": os.getenv('PREFERRED_AI_PROVIDER', 'anthropic')
+            },
+            "knowledge_loaded": _knowledge_loaded
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return {
+            "status": "unhealthy",
             "error": str(e),
-            "platform": "Vercel"
+            "api_version": "2025"
         }
 
 @app.post("/api/search", response_model=SearchResponse)
 async def search_knowledge(request: SearchRequest):
-    """Search the knowledge base for relevant content"""
+    """Search the management knowledge base using 2025 API"""
     try:
-        collection = load_knowledge_base()
+        await ensure_knowledge_loaded()
 
-        # Perform semantic search
-        results = collection.query(
-            query_texts=[request.query],
-            n_results=request.max_results,
-            include=["documents", "metadatas", "distances"]
+        # Use new search API format
+        index = get_pinecone_index()
+
+        # Search using current 2025 API
+        search_results = index.search(
+            namespace=request.namespace,
+            query={
+                "top_k": request.top_k,
+                "inputs": {
+                    "text": request.query
+                }
+            }
         )
 
-        # Format results
-        search_results = []
-        for i, (doc, metadata, distance) in enumerate(zip(
-            results['documents'][0],
-            results['metadatas'][0],
-            results['distances'][0]
-        )):
-            search_results.append(SearchResult(
-                content=doc,
-                source_file=metadata.get('source_file', 'Unknown'),
-                relevance_score=1.0 - distance,  # Convert distance to relevance score
-                metadata=metadata
+        # Process results from new API format
+        results = []
+        hits = search_results.get('result', {}).get('hits', [])
+
+        for hit in hits:
+            results.append(SearchResult(
+                id=hit['_id'],
+                content=hit['fields'].get('content', ''),
+                metadata={
+                    'source_file': hit['fields'].get('source_file', 'Unknown'),
+                    'framework': hit['fields'].get('framework', 'Unknown'),
+                    'category': hit['fields'].get('category', 'General'),
+                    'section': hit['fields'].get('section', ''),
+                    'word_count': hit['fields'].get('word_count', 0)
+                },
+                score=float(hit['_score'])
             ))
 
         return SearchResponse(
-            results=search_results,
-            query=request.query,
-            total_results=len(search_results)
+            results=results,
+            total_results=len(results),
+            query=request.query
         )
 
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Search error: {e}")
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        logger.error(f"Search failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Search failed: {e}")
 
 @app.post("/api/ask", response_model=AskResponse)
 async def ask_question(request: AskRequest):
     """Ask a question and get an AI-powered response with sources"""
     try:
-        collection = load_knowledge_base()
-        chroma_client, _, anthropic_client, openai_client = get_clients()
-
         # First, search for relevant context
-        search_results = collection.query(
-            query_texts=[request.query],
-            n_results=request.context_size,
-            include=["documents", "metadatas", "distances"]
+        search_request = SearchRequest(
+            query=request.question,
+            top_k=request.top_k,
+            namespace=request.namespace
         )
+        search_response = await search_knowledge(search_request)
 
-        # Prepare context for AI
-        context_chunks = []
-        sources = []
+        if not search_response.results:
+            raise HTTPException(status_code=404, detail="No relevant knowledge found for this question")
 
-        for doc, metadata, distance in zip(
-            search_results['documents'][0],
-            search_results['metadatas'][0],
-            search_results['distances'][0]
-        ):
-            context_chunks.append(doc)
-            sources.append(SearchResult(
-                content=doc,
-                source_file=metadata.get('source_file', 'Unknown'),
-                relevance_score=1.0 - distance,
-                metadata=metadata
-            ))
+        # Prepare context from search results
+        context_parts = []
+        for i, result in enumerate(search_response.results, 1):
+            source_info = f"Source {i} ({result.metadata.get('source_file', 'Unknown')})"
+            context_parts.append(f"{source_info}:\n{result.content}\n")
 
-        # Create prompt for AI
-        context_text = "\n\n---\n\n".join(context_chunks)
+        context = "\n---\n".join(context_parts)
 
-        prompt = f"""You are an expert management consultant. Use the provided management knowledge to answer the question with specific, actionable advice.
+        # Determine AI provider
+        preferred_provider = request.ai_provider or os.getenv('PREFERRED_AI_PROVIDER', 'anthropic')
 
-CONTEXT FROM MANAGEMENT KNOWLEDGE BASE:
-{context_text}
-
-QUESTION: {request.query}
-
-Please provide a comprehensive answer that:
-1. Gives specific, actionable advice
-2. References relevant frameworks from the knowledge base
-3. Includes practical next steps
-4. Maintains a professional consulting tone
-
-If the question is outside management topics, politely redirect to management-related guidance.
-
-ANSWER:"""
-
-        # Get AI response
-        ai_provider = "none"
-
-        if anthropic_client:
-            try:
-                response = anthropic_client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=1000,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                answer = response.content[0].text
-                ai_provider = "anthropic"
-            except Exception as e:
-                logger.error(f"Anthropic API error: {e}")
-                # Fall back to OpenAI if available
-                if openai_client:
-                    anthropic_client = None
-                else:
-                    raise HTTPException(status_code=500, detail="AI service unavailable")
-
-        if openai_client and ai_provider == "none":
-            try:
-                response = openai_client.chat.completions.create(
-                    model="gpt-4",
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=1000,
-                    temperature=0.7
-                )
-                answer = response.choices[0].message.content
-                ai_provider = "openai"
-            except Exception as e:
-                logger.error(f"OpenAI API error: {e}")
-                raise HTTPException(status_code=500, detail="AI service unavailable")
-
-        if ai_provider == "none":
-            raise HTTPException(status_code=500, detail="No AI provider available")
+        # Generate AI response
+        if preferred_provider == 'anthropic':
+            answer = await generate_anthropic_response(request.question, context)
+            used_provider = 'anthropic'
+        else:
+            answer = await generate_openai_response(request.question, context)
+            used_provider = 'openai'
 
         return AskResponse(
             answer=answer,
-            sources=sources,
-            query=request.query,
-            ai_provider=ai_provider
+            sources=search_response.results,
+            ai_provider=used_provider,
+            question=request.question
         )
 
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Ask question error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate response: {str(e)}")
+        logger.error(f"Ask question failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Question processing failed: {e}")
 
-# For Vercel compatibility
-handler = app
+async def generate_anthropic_response(question: str, context: str) -> str:
+    """Generate response using Anthropic Claude"""
+    try:
+        client = get_anthropic_client()
+        if not client:
+            raise Exception("Anthropic client not available")
+
+        prompt = f"""You are a senior management consultant with deep expertise in leadership, feedback, coaching, and organizational effectiveness. You have access to a comprehensive knowledge base of management frameworks and best practices.
+
+Based on the provided context from management resources, provide a professional, actionable response to the user's question. Your response should:
+
+1. Be practical and immediately actionable
+2. Reference specific frameworks or methodologies when relevant
+3. Use a professional consulting tone
+4. Cite sources when appropriate
+5. Be concise but comprehensive
+
+Context from knowledge base:
+{context}
+
+Question: {question}
+
+Provide a professional management consultant response:"""
+
+        response = client.messages.create(
+            model="claude-3-sonnet-20240229",
+            max_tokens=1500,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        return response.content[0].text
+
+    except Exception as e:
+        logger.error(f"Anthropic response generation failed: {e}")
+        # Fallback to OpenAI
+        return await generate_openai_response(question, context)
+
+async def generate_openai_response(question: str, context: str) -> str:
+    """Generate response using OpenAI GPT"""
+    try:
+        client = get_openai_client()
+        if not client:
+            raise Exception("OpenAI client not available")
+
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a senior management consultant with deep expertise in leadership, feedback, coaching, and organizational effectiveness. Provide professional, actionable advice based on the provided management knowledge base context."
+                },
+                {
+                    "role": "user",
+                    "content": f"""Based on this context from management resources:
+
+{context}
+
+Question: {question}
+
+Provide a professional management consultant response that is practical, actionable, and references relevant frameworks when appropriate."""
+                }
+            ],
+            max_tokens=1500,
+            temperature=0.7
+        )
+
+        return response.choices[0].message.content
+
+    except Exception as e:
+        logger.error(f"OpenAI response generation failed: {e}")
+        return "I apologize, but I'm unable to generate a response at this time. Please try again later."
+
+# Main entry point for Vercel
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
