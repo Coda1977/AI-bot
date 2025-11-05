@@ -1,0 +1,233 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Management Knowledge RAG API",
+    "description": "Semantic search and AI responses for management frameworks and guidance",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://your-rag-api.vercel.app",
+      "description": "Production RAG API Server (Vercel)"
+    }
+  ],
+  "paths": {
+    "/api/search": {
+      "post": {
+        "summary": "Search management knowledge base",
+        "description": "Perform semantic search across management frameworks and materials",
+        "operationId": "searchKnowledge",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "Search query for management knowledge"
+                  },
+                  "domain": {
+                    "type": "string",
+                    "enum": ["coaching", "feedback", "delegation", "performance", "leadership", "communication"],
+                    "description": "Management domain filter"
+                  },
+                  "detail_level": {
+                    "type": "string",
+                    "enum": ["quick", "detailed", "comprehensive"],
+                    "default": "detailed",
+                    "description": "Response detail level"
+                  },
+                  "max_results": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 20,
+                    "default": 5,
+                    "description": "Maximum number of search results"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "content": {
+                            "type": "string",
+                            "description": "Content chunk from knowledge base"
+                          },
+                          "source_file": {
+                            "type": "string",
+                            "description": "Source document name"
+                          },
+                          "relevance_score": {
+                            "type": "number",
+                            "description": "Relevance score (0-1)"
+                          },
+                          "metadata": {
+                            "type": "object",
+                            "description": "Additional metadata about the content"
+                          }
+                        }
+                      }
+                    },
+                    "query": {
+                      "type": "string",
+                      "description": "Original search query"
+                    },
+                    "total_results": {
+                      "type": "integer",
+                      "description": "Number of results found"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ask": {
+      "post": {
+        "summary": "Ask management question with AI response",
+        "description": "Get AI-powered responses to management questions using knowledge base context",
+        "operationId": "askQuestion",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "Question about management"
+                  },
+                  "domain": {
+                    "type": "string",
+                    "enum": ["coaching", "feedback", "delegation", "performance", "leadership", "communication"],
+                    "description": "Management domain filter"
+                  },
+                  "detail_level": {
+                    "type": "string",
+                    "enum": ["quick", "detailed", "comprehensive"],
+                    "default": "detailed",
+                    "description": "Response detail level"
+                  },
+                  "context_size": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "default": 5,
+                    "description": "Number of knowledge chunks to use for context"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "AI-powered response with sources",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "answer": {
+                      "type": "string",
+                      "description": "AI-generated response to the question"
+                    },
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "content": {
+                            "type": "string",
+                            "description": "Content chunk used for context"
+                          },
+                          "source_file": {
+                            "type": "string",
+                            "description": "Source document name"
+                          },
+                          "relevance_score": {
+                            "type": "number",
+                            "description": "Relevance score (0-1)"
+                          }
+                        }
+                      }
+                    },
+                    "query": {
+                      "type": "string",
+                      "description": "Original question"
+                    },
+                    "ai_provider": {
+                      "type": "string",
+                      "description": "AI provider used (anthropic/openai)"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "summary": "Health check",
+        "description": "Check API health and service status",
+        "operationId": "healthCheck",
+        "responses": {
+          "200": {
+            "description": "Health status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "description": "Service status"
+                    },
+                    "chromadb": {
+                      "type": "boolean",
+                      "description": "ChromaDB connection status"
+                    },
+                    "anthropic": {
+                      "type": "boolean",
+                      "description": "Anthropic API availability"
+                    },
+                    "openai": {
+                      "type": "boolean",
+                      "description": "OpenAI API availability"
+                    },
+                    "knowledge_base_size": {
+                      "type": "integer",
+                      "description": "Number of chunks in knowledge base"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
