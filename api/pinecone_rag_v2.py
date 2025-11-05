@@ -184,8 +184,9 @@ async def health_check():
             "service": "Management Knowledge RAG API v2.1 FIXED",
             "version": "2.1.1",
             "api_version": "2025",
-            "deployed_at": "2025-11-05T16:15:00Z",
-            "fix_status": "MANUAL EMBEDDINGS DEPLOYED",
+            "deployed_at": "2025-11-05T19:20:00Z",
+            "fix_status": "MANUAL EMBEDDINGS DEPLOYED - CACHE BUST",
+            "cache_bust": "v20251105-1920",
             "pinecone": {
                 "connected": True,
                 "total_vectors": stats.total_vector_count,
