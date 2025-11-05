@@ -111,9 +111,9 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["query"],
+                "required": ["question"],
                 "properties": {
-                  "query": {
+                  "question": {
                     "type": "string",
                     "description": "Question about management"
                   },
@@ -172,7 +172,7 @@
                         }
                       }
                     },
-                    "query": {
+                    "question": {
                       "type": "string",
                       "description": "Original question"
                     },
