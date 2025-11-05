@@ -2,8 +2,8 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Management Knowledge RAG API",
-    "description": "Semantic search and AI responses for management frameworks and guidance",
-    "version": "1.0.0"
+    "description": "Pinecone-powered semantic search and AI responses for management frameworks and guidance. Full-quality knowledge base with 816 chunks from 320k+ words of management materials.",
+    "version": "2.0.0"
   },
   "servers": [
     {
