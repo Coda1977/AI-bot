@@ -81,31 +81,39 @@ User Question → FastAPI Server → ChromaDB Search → AI Processing → Respo
 5. **GitHub Integration**: Automatic deployment pipeline established
 6. **OpenAPI Schema**: Ready for Custom GPT Actions integration
 
-### ✅ **Completed - Pinecone Implementation**
-- **Pinecone RAG API**: Complete implementation using full-quality knowledge base
-- **Architecture**: External vector database solves Vercel 250MB limit
-- **Knowledge Quality**: No compression - full 816 chunks with rich metadata
-- **Multi-Provider AI**: Anthropic Claude + OpenAI GPT fallback
+### ✅ **Completed - Pinecone API v2.0 (Current 2025 API)**
+- **CRITICAL UPDATE**: Migrated to current Pinecone API (deprecated old version)
+- **Integrated Embeddings**: Built-in `llama-text-embed-v2` (no OpenAI costs)
+- **CLI-Based Setup**: Industry standard `pc index create` approach
+- **Modern API**: `upsert_records()` with namespace support
+- **Full Knowledge Quality**: 816 chunks with rich metadata preserved
 
-### 🚀 **Pinecone Implementation Details**
-**Database**: Pinecone Starter (Free Tier)
-- **Capacity**: 2GB storage, 2M vectors (816 chunks use ~50MB)
-- **Search**: OpenAI text-embedding-ada-002 embeddings
-- **Quality**: Full content, rich metadata, semantic search
-- **Cost**: ~$0 setup, ~$30-100/month production
+### 🚀 **Pinecone v2.0 Implementation Details**
+**Current API (2025)**:
+- **Package**: `pinecone>=5.0.0` (not deprecated `pinecone-client`)
+- **Setup**: CLI-based index creation with integrated embeddings
+- **Cost**: Reduced (no OpenAI embedding costs)
+- **Performance**: Faster, more reliable, better error handling
 
 **Files Created**:
-- `api/pinecone_rag.py` - Vercel-optimized RAG API
-- `setup_pinecone.py` - Knowledge base upload script
-- `PINECONE_SETUP_GUIDE.md` - Complete setup instructions
+- `api/pinecone_rag_v2.py` - Current 2025 API implementation
+- `setup_pinecone_v2.py` - CLI-based setup script
+- `PINECONE_SETUP_GUIDE_V2.md` - Updated setup instructions
 
-### 📋 **Next Steps**
-1. **Setup Pinecone Account**: Get API keys from pinecone.io
-2. **Upload Knowledge Base**: Run setup_pinecone.py to upload 816 chunks
-3. **Deploy to Vercel**: Set environment variables and deploy
-4. **Configure Custom GPT Actions**: Import OpenAPI schema, test integration
-5. **Comprehensive Testing**: Run 40+ management scenarios through system
-6. **Docker Packaging**: Create enterprise black box solution
+### ⚠️ **Breaking Changes from v1.0**
+- Old `pinecone-client` API deprecated
+- CLI installation required for index creation
+- New setup script with current API patterns
+- Migration required for existing implementations
+
+### 📋 **Next Steps (v2.0 Current API)**
+1. **Install Pinecone CLI**: `brew install pinecone-io/tap/pinecone` (or GitHub releases)
+2. **Setup Pinecone Account**: Get API keys from pinecone.io
+3. **Run v2.0 Setup**: `python setup_pinecone_v2.py` (uploads 816 chunks)
+4. **Deploy to Vercel**: Set environment variables and deploy v2.0 API
+5. **Configure Custom GPT Actions**: Import OpenAPI schema, test integration
+6. **Comprehensive Testing**: Run 40+ management scenarios through system
+7. **Docker Packaging**: Create enterprise black box solution
 
 ---
 
