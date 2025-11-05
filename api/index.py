@@ -121,18 +121,31 @@ def load_knowledge_base():
     try:
         # Load chunks data if not already loaded
         if _chunks_data is None:
-            # In Vercel, files are in the root directory
-            chunks_file = Path("chunks_data.json")
-            if not chunks_file.exists():
-                # Try alternative path
-                chunks_file = Path("output/chromadb_data/chunks_data.json")
-                if not chunks_file.exists():
-                    raise HTTPException(status_code=500, detail="Knowledge base file not found")
+            # Try compressed gzipped version first
+            chunks_file = Path("chunks_compressed.json.gz")
+            if chunks_file.exists():
+                import gzip
+                with gzip.open(chunks_file, 'rt', encoding='utf-8') as f:
+                    data = json.load(f)
+                logger.info("Loaded compressed knowledge base")
+            else:
+                # Fallback to regular compressed version
+                chunks_file = Path("chunks_compressed.json")
+                if chunks_file.exists():
+                    with open(chunks_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    logger.info("Loaded regular compressed knowledge base")
+                else:
+                    # Final fallback to original
+                    chunks_file = Path("chunks_data.json")
+                    if not chunks_file.exists():
+                        raise HTTPException(status_code=500, detail="Knowledge base file not found")
+                    with open(chunks_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    logger.info("Loaded original knowledge base")
 
-            with open(chunks_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
             _chunks_data = data.get('chunks', [])
-            logger.info(f"Loaded {len(_chunks_data)} chunks from JSON")
+            logger.info(f"Loaded {len(_chunks_data)} chunks")
 
         if not _chunks_data:
             raise HTTPException(status_code=500, detail="No chunks found in knowledge base")
@@ -151,7 +164,16 @@ def load_knowledge_base():
         for chunk in _chunks_data:
             ids.append(chunk['id'])
             documents.append(chunk['content'])
-            metadatas.append(chunk['metadata'])
+            # Handle both compressed and original formats
+            if 'metadata' in chunk:
+                metadatas.append(chunk['metadata'])
+            else:
+                # Compressed format
+                metadatas.append({
+                    'source_file': chunk.get('source_file', 'Unknown'),
+                    'framework': chunk.get('framework', 'Unknown'),
+                    'category': chunk.get('category', 'General')
+                })
 
         # Add to ChromaDB in batches (smaller for serverless)
         batch_size = 50
