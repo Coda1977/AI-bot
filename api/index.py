@@ -185,9 +185,9 @@ async def health_check():
             "service": "Management Knowledge RAG API v3.0 WORKING",
             "version": "3.0.0",
             "api_version": "2025",
-            "deployed_at": "2025-11-05T19:25:00Z",
-            "fix_status": "MANUAL EMBEDDINGS WORKING",
-            "file_name": "rag_fixed_v3.py",
+            "deployed_at": "2025-11-06T17:25:00Z",
+            "fix_status": "ENHANCED SEARCH + BUNDLED CHUNKS",
+            "file_name": "index.py",
             "pinecone": {
                 "connected": True,
                 "total_vectors": stats.total_vector_count,
