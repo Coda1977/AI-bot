@@ -201,7 +201,12 @@ async def health_check():
                 "openai": openai_available,
                 "preferred": os.getenv('PREFERRED_AI_PROVIDER', 'anthropic')
             },
-            "knowledge_loaded": _knowledge_loaded
+            "knowledge_loaded": _knowledge_loaded,
+            "chunks_file_debug": {
+                "chunks_data_exists": Path("chunks_data.json").exists(),
+                "current_dir": str(Path.cwd()),
+                "api_files": [f.name for f in Path(".").iterdir() if f.name.startswith("chunks")]
+            }
         }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
