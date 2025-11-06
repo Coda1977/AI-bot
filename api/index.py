@@ -384,22 +384,16 @@ async def generate_anthropic_response(question: str, context: str) -> str:
         if not client:
             raise Exception("Anthropic client not available")
 
-        prompt = f"""You are a senior management consultant with deep expertise in leadership, feedback, coaching, and organizational effectiveness. You have access to a comprehensive knowledge base of management frameworks and best practices.
+        prompt = f"""You are a management consultant. You must answer ONLY using the information provided in the context below. Do NOT use any external knowledge, do NOT cite external sources like Harvard Business Review, and do NOT reference frameworks not mentioned in the context.
 
-Based on the provided context from management resources, provide a professional, actionable response to the user's question. Your response should:
-
-1. Be practical and immediately actionable
-2. Reference specific frameworks or methodologies when relevant
-3. Use a professional consulting tone
-4. Cite sources when appropriate
-5. Be concise but comprehensive
+CRITICAL: If the provided context does not contain enough information to answer the question, say "I don't have specific information about this in the provided materials."
 
 Context from knowledge base:
 {context}
 
 Question: {question}
 
-Provide a professional management consultant response:"""
+Answer using ONLY the information from the context above:"""
 
         response = client.messages.create(
             model="claude-3-haiku-20240307",
@@ -427,17 +421,17 @@ async def generate_openai_response(question: str, context: str) -> str:
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a senior management consultant with deep expertise in leadership, feedback, coaching, and organizational effectiveness. Provide professional, actionable advice based on the provided management knowledge base context."
+                    "content": "You are a management consultant. You must answer ONLY using the information provided in the context. Do NOT use external knowledge, do NOT cite external sources, and do NOT reference frameworks not mentioned in the context. If the context doesn't contain enough information, say so."
                 },
                 {
                     "role": "user",
-                    "content": f"""Based on this context from management resources:
+                    "content": f"""Context from knowledge base:
 
 {context}
 
 Question: {question}
 
-Provide a professional management consultant response that is practical, actionable, and references relevant frameworks when appropriate."""
+Answer using ONLY the information from the context above:"""
                 }
             ],
             max_tokens=1500,
