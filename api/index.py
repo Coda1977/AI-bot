@@ -160,22 +160,6 @@ async def check_knowledge_loaded():
         _knowledge_loaded = False
         return False
 
-@app.get("/api/test-anthropic")
-async def test_anthropic():
-    """Test Anthropic API directly"""
-    try:
-        client = get_anthropic_client()
-        if not client:
-            return {"error": "No Anthropic client available"}
-
-        response = client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=100,
-            messages=[{"role": "user", "content": "Say 'Anthropic is working' if you can respond"}]
-        )
-        return {"status": "success", "response": response.content[0].text}
-    except Exception as e:
-        return {"status": "error", "error": str(e), "type": type(e).__name__}
 
 @app.get("/api/health")
 async def health_check():
