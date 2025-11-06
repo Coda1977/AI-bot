@@ -3,7 +3,7 @@
 Knowledge Service API v4.0 - Proper Architecture
 - Loads chunks ONCE at startup (not on every request)
 - Keeps data in memory for fast access
-- No fake embeddings - pure semantic keyword search
+- No fake embeddings
 - Multi-tenant namespace support
 - Simple API: question → sources
 """
@@ -18,23 +18,20 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import uvicorn
-
-# Global in-memory knowledge base (loaded ONCE at startup)
-_knowledge_base: Dict[str, List[Dict]] = {}
-_knowledge_loaded = False
-_anthropic_client = None
-_openai_client = None
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Global in-memory knowledge base (loaded ONCE at startup)
+_knowledge_base: Dict[str, List[Dict]] = {}
+_knowledge_loaded = False
+
 # Pydantic models
 class SearchRequest(BaseModel):
     query: str
     top_k: int = 5
-    namespace: str = "management-knowledge"
+    namespace: str = "management-knowledge"  # For multi-tenancy
 
 class SearchResult(BaseModel):
     id: str
@@ -75,23 +72,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 def load_chunks_once() -> Dict[str, List[Dict]]:
     """
     Load all knowledge base chunks ONCE at startup and keep in memory.
-    Returns dict mapping namespace -> list of chunks.
-    NO UNPACKING ON EVERY REQUEST!
+    Returns dict mapping namespace -> list of chunks
     """
     global _knowledge_loaded
 
     if _knowledge_loaded:
-        logger.info("Knowledge base already loaded in memory")
+        logger.info("Knowledge base already loaded")
         return _knowledge_base
 
     try:
         # Try embedded base64 first (for Vercel)
         try:
             from api.embedded_chunks import CHUNKS_DATA_B64
-            logger.info("Loading from embedded base64 data (ONCE at startup)")
+            logger.info("Loading from embedded base64 data")
             gzipped_data = base64.b64decode(CHUNKS_DATA_B64)
             data = json.loads(gzip.decompress(gzipped_data).decode('utf-8'))
         except ImportError:
@@ -119,7 +116,7 @@ def load_chunks_once() -> Dict[str, List[Dict]]:
             if not knowledge_file:
                 raise FileNotFoundError("Could not find chunks_data.json or chunks_data.json.gz")
 
-            # Load data ONCE
+            # Load data
             if str(knowledge_file).endswith('.gz'):
                 with gzip.open(knowledge_file, 'rt', encoding='utf-8') as f:
                     data = json.load(f)
@@ -134,53 +131,21 @@ def load_chunks_once() -> Dict[str, List[Dict]]:
         _knowledge_base['management-knowledge'] = chunks
         _knowledge_loaded = True
 
-        logger.info(f"✅ Knowledge base loaded ONCE at startup: {len(chunks)} chunks in memory")
+        logger.info(f"✅ Knowledge base loaded: {len(chunks)} chunks in memory")
         return _knowledge_base
 
     except Exception as e:
         logger.error(f"❌ Failed to load knowledge base: {e}")
         raise
 
-def get_anthropic_client():
-    """Initialize Anthropic client"""
-    global _anthropic_client
-    if _anthropic_client is None:
-        try:
-            import anthropic
-            api_key = os.getenv('ANTHROPIC_API_KEY')
-            if api_key:
-                _anthropic_client = anthropic.Anthropic(api_key=api_key)
-                logger.info("Anthropic client initialized")
-            else:
-                logger.warning("ANTHROPIC_API_KEY not found")
-        except Exception as e:
-            logger.error(f"Failed to initialize Anthropic client: {e}")
-    return _anthropic_client
-
-def get_openai_client():
-    """Initialize OpenAI client"""
-    global _openai_client
-    if _openai_client is None:
-        try:
-            import openai
-            api_key = os.getenv('OPENAI_API_KEY')
-            if api_key:
-                _openai_client = openai.OpenAI(api_key=api_key)
-                logger.info("OpenAI client initialized")
-            else:
-                logger.warning("OPENAI_API_KEY not found")
-        except Exception as e:
-            logger.error(f"Failed to initialize OpenAI client: {e}")
-    return _openai_client
-
 
 @app.on_event("startup")
 async def startup_event():
-    """Load knowledge base once at startup - NO UNPACKING ON EVERY REQUEST!"""
+    """Load knowledge base once at startup"""
     logger.info("🚀 Starting Knowledge Service v4.0")
     try:
         load_chunks_once()
-        logger.info("✅ Knowledge Service ready - data loaded in memory")
+        logger.info("✅ Knowledge Service ready")
     except Exception as e:
         logger.error(f"❌ Startup failed: {e}")
         # Don't crash, but log the error
@@ -190,7 +155,6 @@ async def startup_event():
 async def health_check():
     """Health check endpoint"""
     try:
-        # Get namespace stats from in-memory knowledge base
         namespaces_info = {}
         for namespace, chunks in _knowledge_base.items():
             namespaces_info[namespace] = {
@@ -198,22 +162,13 @@ async def health_check():
                 "total_words": sum(c.get('word_count', 0) for c in chunks)
             }
 
-        # Check AI providers
-        anthropic_available = get_anthropic_client() is not None
-        openai_available = get_openai_client() is not None
-
         return {
             "status": "healthy" if _knowledge_loaded else "loading",
-            "service": "Management Knowledge Service v4.0",
+            "service": "Knowledge Service v4.0",
             "version": "4.0.0",
-            "architecture": "Efficient - loads once at startup, no unpacking per request",
+            "architecture": "Efficient - loads once, searches fast",
             "knowledge_loaded": _knowledge_loaded,
             "namespaces": namespaces_info,
-            "ai_providers": {
-                "anthropic": anthropic_available,
-                "openai": openai_available,
-                "preferred": os.getenv('PREFERRED_AI_PROVIDER', 'anthropic')
-            },
             "improvements": [
                 "✅ Loads chunks ONCE at startup (not on every request)",
                 "✅ Keeps all data in memory for instant access",
@@ -230,10 +185,11 @@ async def health_check():
             "knowledge_loaded": _knowledge_loaded
         }
 
+
 def semantic_search(query: str, chunks: List[Dict], top_k: int = 5) -> List[SearchResult]:
     """
     Fast semantic keyword search through in-memory chunks.
-    NO FILE LOADING - data already in memory from startup!
+    No unpacking, no decompression - data already in memory!
     """
     query_lower = query.lower()
     query_words = query_lower.split()
@@ -312,11 +268,12 @@ def semantic_search(query: str, chunks: List[Dict], top_k: int = 5) -> List[Sear
 
     return results
 
+
 @app.post("/api/search", response_model=SearchResponse)
 async def search_knowledge(request: SearchRequest):
     """
     Search the knowledge base - FAST because data is already in memory!
-    No unpacking, no decompression, no fake embeddings.
+    No unpacking, no decompression on every request.
     """
     try:
         if not _knowledge_loaded:
@@ -347,6 +304,7 @@ async def search_knowledge(request: SearchRequest):
     except Exception as e:
         logger.error(f"Search failed: {e}")
         raise HTTPException(status_code=500, detail=f"Search failed: {e}")
+
 
 @app.post("/api/ask")
 async def ask_question(request: AskRequest):
@@ -384,13 +342,13 @@ async def ask_question(request: AskRequest):
         logger.error(f"Ask question failed: {e}")
         raise HTTPException(status_code=500, detail=f"Question processing failed: {e}")
 
+
 # Root endpoint
 @app.get("/")
 async def root():
     return {
         "service": "Management Knowledge Service v4.0",
         "status": "running",
-        "architecture": "Efficient - loads once at startup",
         "endpoints": {
             "health": "/api/health",
             "search": "POST /api/search",
@@ -403,9 +361,3 @@ async def root():
 def handler(request, response):
     """Vercel serverless handler"""
     return app(request, response)
-
-
-# Main entry point for local development
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
