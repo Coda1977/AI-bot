@@ -250,62 +250,163 @@ def create_anthropic_embeddings(text: str):
             numbers.extend(numbers[:min(100, 1536-len(numbers))])
         return numbers[:1536]
 
-async def search_by_keywords(query: str, top_k: int = 5) -> List[SearchResult]:
-    """Search knowledge base using keyword matching via Pinecone metadata"""
+async def search_by_keywords_improved(query: str, top_k: int = 5) -> List[SearchResult]:
+    """Enhanced keyword-based search with fuzzy matching and semantic understanding"""
     try:
-        # Since we can't access local files in Vercel, use Pinecone's metadata search
+        # Load local knowledge base for better search
+        knowledge_file = Path("output/chromadb_data/chunks_data.json")
+        if not knowledge_file.exists():
+            # Try alternative paths
+            alt_paths = [
+                Path("../output/chromadb_data/chunks_data.json"),
+                Path("chunks_data.json"),
+            ]
+            for alt_path in alt_paths:
+                if alt_path.exists():
+                    knowledge_file = alt_path
+                    break
+            else:
+                logger.warning("Knowledge base file not found for improved search")
+                return await search_by_pinecone_metadata(query, top_k)
+
+        with open(knowledge_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        chunks = data.get('chunks', [])
+        query_words = query.lower().split()
+
+        # Enhanced scoring system
+        scored_chunks = []
+        for chunk in chunks:
+            content = chunk['content'].lower()
+            source_file = chunk['metadata'].get('source_file', '').lower()
+            framework = chunk['metadata'].get('framework', '').lower()
+
+            score = 0
+
+            # 1. Exact phrase matching (highest weight)
+            if query.lower() in content:
+                score += 100
+
+            # 2. Source file matching
+            for word in query_words:
+                if len(word) > 2:
+                    if word in source_file:
+                        score += 50
+                    if word in framework:
+                        score += 30
+
+            # 3. Individual word matching
+            for word in query_words:
+                if len(word) > 2:
+                    count = content.count(word)
+                    score += count * len(word) * 5
+
+            # 4. Semantic keyword boosting
+            semantic_matches = {
+                'feedback': ['giving', 'receiving', 'sbi', 'situation', 'behavior', 'impact', 'radical', 'candor'],
+                'coaching': ['development', '1:1', 'growth', 'mentoring', 'guidance'],
+                'delegation': ['authority', 'responsibility', 'accountability', 'decision'],
+                'leadership': ['management', 'leading', 'influence', 'direction'],
+                'communication': ['conversation', 'discussion', 'talking', 'speaking']
+            }
+
+            for category, keywords in semantic_matches.items():
+                if category in query.lower():
+                    for keyword in keywords:
+                        if keyword in content:
+                            score += 20
+
+            # 5. Framework-specific boosting
+            if 'feedback' in query.lower() and any(term in content for term in ['situation', 'behavior', 'impact']):
+                score += 50
+            if 'coaching' in query.lower() and any(term in content for term in ['development', 'growth', 'conversation']):
+                score += 50
+
+            if score > 0:
+                scored_chunks.append((chunk, score))
+
+        # Sort by score and return results
+        scored_chunks.sort(key=lambda x: x[1], reverse=True)
+
+        results = []
+        for chunk, score in scored_chunks[:top_k]:
+            results.append(SearchResult(
+                id=chunk['id'],
+                content=chunk['content'],
+                metadata={
+                    'source_file': chunk['metadata'].get('source_file', 'Unknown'),
+                    'framework': chunk['metadata'].get('framework', 'Unknown'),
+                    'category': chunk['metadata'].get('category', 'General'),
+                    'section': chunk['metadata'].get('section', ''),
+                    'word_count': chunk.get('word_count', 0)
+                },
+                score=float(score) / 100.0
+            ))
+
+        logger.info(f"Enhanced search found {len(results)} results for '{query}'")
+        return results
+
+    except Exception as e:
+        logger.error(f"Enhanced search failed: {e}")
+        # Fallback to Pinecone metadata search
+        return await search_by_pinecone_metadata(query, top_k)
+
+async def search_by_pinecone_metadata(query: str, top_k: int = 5) -> List[SearchResult]:
+    """Fallback search using Pinecone metadata when local files aren't available"""
+    try:
         index = get_pinecone_index()
         namespace = "management-knowledge"
 
-        # Try to get some vectors and examine their metadata
-        # This is a workaround - we'll search by metadata rather than content
         query_words = query.lower().split()
+        dummy_embedding = [0.1] * 1536
 
-        # Create a dummy embedding for the search
-        dummy_embedding = [0.1] * 1536  # Simple dummy vector
-
-        # Search with a broader scope
         search_results = index.query(
             vector=dummy_embedding,
-            top_k=50,  # Get more results to filter
+            top_k=min(100, top_k * 10),  # Get more results to filter
             include_metadata=True,
             namespace=namespace
         )
 
-        # Filter results based on keyword matches in metadata
         scored_results = []
         for match in search_results.matches:
             metadata = match.metadata or {}
-            content = metadata.get('content', '')
+            content = metadata.get('content', '').lower()
             source_file = metadata.get('source_file', '').lower()
+            framework = metadata.get('framework', '').lower()
 
             score = 0
-            # Score based on source file matches (since content might not be in metadata)
+
+            # Enhanced Pinecone metadata scoring
             for word in query_words:
                 if len(word) > 2:
+                    # Source file matches
                     if word in source_file:
-                        score += len(word) * 5  # Weight filename matches highly
-                    if word in content.lower():
-                        score += content.lower().count(word) * len(word)
+                        score += 50
+                    # Framework matches
+                    if word in framework:
+                        score += 30
+                    # Content matches
+                    if word in content:
+                        score += content.count(word) * 10
 
-            if score > 0 or 'feedback' in source_file:  # Special case for feedback
+            # Specific content type boosting
+            if 'feedback' in query.lower():
+                if 'feedback' in source_file or 'feedback' in framework:
+                    score += 100
+                if any(term in content for term in ['situation', 'behavior', 'impact', 'sbi', 'radical', 'candor']):
+                    score += 50
+
+            if score > 0 or 'feedback' in source_file:  # Always include feedback files
                 scored_results.append((match, score))
 
-        # Sort by score
         scored_results.sort(key=lambda x: x[1], reverse=True)
 
         results = []
         for match, score in scored_results[:top_k]:
-            # Try multiple ways to get content
             content = match.metadata.get('content', '')
-
             if not content:
-                # Try to get full content from local file (fallback)
                 content = await get_full_content_by_id(match.id)
-
-            if not content or content == "Content not available":
-                # Debug: Show what metadata is actually available
-                content = f"DEBUG: Available metadata keys: {list(match.metadata.keys())}"
 
             results.append(SearchResult(
                 id=match.id,
@@ -323,15 +424,14 @@ async def search_by_keywords(query: str, top_k: int = 5) -> List[SearchResult]:
         return results
 
     except Exception as e:
-        logger.error(f"Keyword search failed: {e}")
+        logger.error(f"Pinecone metadata search failed: {e}")
         return []
 
-@app.post("/api/search", response_model=SearchResponse)
 async def search_knowledge(request: SearchRequest):
     """Search the management knowledge base using keyword matching + vector search"""
     try:
         # First try keyword-based search through local knowledge base
-        keyword_results = await search_by_keywords(request.query, request.top_k)
+        keyword_results = await search_by_keywords_improved(request.query, request.top_k)
 
         if keyword_results:
             logger.info(f"Found {len(keyword_results)} results using keyword search")

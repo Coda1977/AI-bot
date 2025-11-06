@@ -1,0 +1,81 @@
+[
+  {
+    "question": "how to give difficult feedback",
+    "expected_frameworks": [
+      "SBI",
+      "Situation Behavior Impact",
+      "Radical Candor"
+    ],
+    "expected_sources": [
+      "Giving Feedback.pptx",
+      "core training materials"
+    ]
+  },
+  {
+    "question": "SBI feedback framework situation behavior impact",
+    "expected_frameworks": [
+      "SBI Framework",
+      "Feedback"
+    ],
+    "expected_sources": [
+      "Giving Feedback.pptx"
+    ]
+  },
+  {
+    "question": "radical candor feedback approach",
+    "expected_frameworks": [
+      "Radical Candor"
+    ],
+    "expected_sources": [
+      "Giving Feedback.pptx"
+    ]
+  },
+  {
+    "question": "coaching conversations for employee development",
+    "expected_frameworks": [
+      "Coaching Framework"
+    ],
+    "expected_sources": [
+      "core training materials",
+      "coaching"
+    ]
+  },
+  {
+    "question": "1:1 meeting structure and framework",
+    "expected_frameworks": [
+      "1:1 Framework"
+    ],
+    "expected_sources": [
+      "core training materials"
+    ]
+  },
+  {
+    "question": "delegation authority levels decision making",
+    "expected_frameworks": [
+      "Delegation Framework"
+    ],
+    "expected_sources": [
+      "core training materials"
+    ]
+  },
+  {
+    "question": "how to delegate responsibility effectively",
+    "expected_frameworks": [
+      "Delegation"
+    ],
+    "expected_sources": [
+      "core training materials"
+    ]
+  },
+  {
+    "question": "leadership development management skills",
+    "expected_frameworks": [
+      "Leadership",
+      "Management"
+    ],
+    "expected_sources": [
+      "First 90 Days",
+      "core training materials"
+    ]
+  }
+]
