@@ -250,17 +250,88 @@ def create_anthropic_embeddings(text: str):
             numbers.extend(numbers[:min(100, 1536-len(numbers))])
         return numbers[:1536]
 
+async def search_by_keywords(query: str, top_k: int = 5) -> List[SearchResult]:
+    """Search knowledge base using keyword matching"""
+    try:
+        knowledge_file = Path("output/chromadb_data/chunks_data.json")
+        if not knowledge_file.exists():
+            # Try alternative paths
+            alt_paths = [
+                Path("../output/chromadb_data/chunks_data.json"),
+                Path("chunks_data.json"),
+            ]
+            for alt_path in alt_paths:
+                if alt_path.exists():
+                    knowledge_file = alt_path
+                    break
+            else:
+                logger.warning("Knowledge base file not found for keyword search")
+                return []
+
+        with open(knowledge_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        chunks = data.get('chunks', [])
+        query_words = query.lower().split()
+
+        # Score chunks based on keyword matches
+        scored_chunks = []
+        for chunk in chunks:
+            content = chunk['content'].lower()
+            score = 0
+
+            # Calculate score based on keyword matches
+            for word in query_words:
+                if len(word) > 2:  # Skip very short words
+                    count = content.count(word)
+                    score += count * len(word)  # Weight by word length
+
+            if score > 0:
+                scored_chunks.append((chunk, score))
+
+        # Sort by score and return top results
+        scored_chunks.sort(key=lambda x: x[1], reverse=True)
+
+        results = []
+        for chunk, score in scored_chunks[:top_k]:
+            results.append(SearchResult(
+                id=chunk['id'],
+                content=chunk['content'],
+                metadata={
+                    'source_file': chunk['metadata'].get('source_file', 'Unknown'),
+                    'framework': chunk['metadata'].get('framework', 'Unknown'),
+                    'category': chunk['metadata'].get('category', 'General'),
+                    'section': chunk['metadata'].get('section', ''),
+                    'word_count': chunk.get('word_count', 0)
+                },
+                score=float(score) / 100.0  # Normalize score
+            ))
+
+        return results
+
+    except Exception as e:
+        logger.error(f"Keyword search failed: {e}")
+        return []
+
 @app.post("/api/search", response_model=SearchResponse)
 async def search_knowledge(request: SearchRequest):
-    """Search the management knowledge base using manual embeddings"""
+    """Search the management knowledge base using keyword matching + vector search"""
     try:
-        # Use traditional search with manual embeddings (matching uploaded data)
-        index = get_pinecone_index()
+        # First try keyword-based search through local knowledge base
+        keyword_results = await search_by_keywords(request.query, request.top_k)
 
-        # Create query embedding using same method as upload
+        if keyword_results:
+            logger.info(f"Found {len(keyword_results)} results using keyword search")
+            return SearchResponse(
+                results=keyword_results,
+                total_results=len(keyword_results),
+                query=request.query
+            )
+
+        # Fallback to vector search (likely won't work due to embedding issues)
+        index = get_pinecone_index()
         query_embedding = create_anthropic_embeddings(request.query)
 
-        # Search using traditional query method
         search_results = index.query(
             vector=query_embedding,
             top_k=request.top_k,
