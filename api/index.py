@@ -427,6 +427,7 @@ async def search_by_pinecone_metadata(query: str, top_k: int = 5) -> List[Search
         logger.error(f"Pinecone metadata search failed: {e}")
         return []
 
+@app.post("/api/search", response_model=SearchResponse)
 async def search_knowledge(request: SearchRequest):
     """Search the management knowledge base using keyword matching + vector search"""
     try:
