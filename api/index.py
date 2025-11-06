@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Knowledge Service API v4.0 - Proper Architecture
+Knowledge Service API v5.0 - Real Vector Search
 - Loads chunks ONCE at startup (not on every request)
-- Keeps data in memory for fast access
-- No fake embeddings - pure semantic keyword search
+- REAL vector similarity search with OpenAI embeddings
 - Multi-tenant namespace support
-- Simple API: question → sources
+- Hybrid search: Vector + Keyword fallback
 """
 import json
 import os
@@ -20,10 +19,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
-# Global in-memory knowledge base (loaded ONCE at startup)
+# Global clients and cache (loaded ONCE at startup)
 _knowledge_base: Dict[str, List[Dict]] = {}
 _knowledge_loaded = False
-_anthropic_client = None
+_pinecone_index = None
 _openai_client = None
 
 # Configure logging
@@ -141,46 +140,76 @@ def load_chunks_once() -> Dict[str, List[Dict]]:
         logger.error(f"❌ Failed to load knowledge base: {e}")
         raise
 
-def get_anthropic_client():
-    """Initialize Anthropic client"""
-    global _anthropic_client
-    if _anthropic_client is None:
+def get_pinecone_index():
+    """Initialize Pinecone client and return index"""
+    global _pinecone_index
+    if _pinecone_index is None:
         try:
-            import anthropic
-            api_key = os.getenv('ANTHROPIC_API_KEY')
-            if api_key:
-                _anthropic_client = anthropic.Anthropic(api_key=api_key)
-                logger.info("Anthropic client initialized")
-            else:
-                logger.warning("ANTHROPIC_API_KEY not found")
+            from pinecone import Pinecone
+            api_key = os.getenv('PINECONE_API_KEY')
+            if not api_key:
+                logger.warning("PINECONE_API_KEY not found - vector search disabled")
+                return None
+
+            index_name = os.getenv('PINECONE_INDEX_NAME', 'management-knowledge-v2')
+            pc = Pinecone(api_key=api_key)
+            _pinecone_index = pc.Index(index_name)
+            logger.info(f"✅ Pinecone connected: {index_name}")
         except Exception as e:
-            logger.error(f"Failed to initialize Anthropic client: {e}")
-    return _anthropic_client
+            logger.error(f"Failed to initialize Pinecone: {e}")
+            return None
+    return _pinecone_index
 
 def get_openai_client():
     """Initialize OpenAI client"""
     global _openai_client
     if _openai_client is None:
         try:
-            import openai
+            from openai import OpenAI
             api_key = os.getenv('OPENAI_API_KEY')
             if api_key:
-                _openai_client = openai.OpenAI(api_key=api_key)
-                logger.info("OpenAI client initialized")
+                _openai_client = OpenAI(api_key=api_key)
+                logger.info("✅ OpenAI client initialized")
             else:
-                logger.warning("OPENAI_API_KEY not found")
+                logger.warning("OPENAI_API_KEY not found - using keyword search only")
         except Exception as e:
             logger.error(f"Failed to initialize OpenAI client: {e}")
     return _openai_client
 
+def create_query_embedding(query: str) -> Optional[List[float]]:
+    """Create real embedding for search query using OpenAI"""
+    try:
+        client = get_openai_client()
+        if not client:
+            return None
+
+        response = client.embeddings.create(
+            model="text-embedding-3-small",  # 1536 dimensions
+            input=query
+        )
+
+        return response.data[0].embedding
+    except Exception as e:
+        logger.error(f"Failed to create query embedding: {e}")
+        return None
+
 
 @app.on_event("startup")
 async def startup_event():
-    """Load knowledge base once at startup - NO UNPACKING ON EVERY REQUEST!"""
-    logger.info("🚀 Starting Knowledge Service v4.0")
+    """Load knowledge base and initialize clients once at startup"""
+    logger.info("🚀 Starting Knowledge Service v5.0 - Real Vector Search")
     try:
+        # Load chunks into memory
         load_chunks_once()
-        logger.info("✅ Knowledge Service ready - data loaded in memory")
+        logger.info("✅ Knowledge base loaded in memory")
+
+        # Initialize Pinecone
+        get_pinecone_index()
+
+        # Initialize OpenAI
+        get_openai_client()
+
+        logger.info("✅ Knowledge Service ready with REAL vector search")
     except Exception as e:
         logger.error(f"❌ Startup failed: {e}")
         # Don't crash, but log the error
@@ -198,28 +227,48 @@ async def health_check():
                 "total_words": sum(c.get('word_count', 0) for c in chunks)
             }
 
-        # Check AI providers
-        anthropic_available = get_anthropic_client() is not None
-        openai_available = get_openai_client() is not None
+        # Check services
+        pinecone_available = _pinecone_index is not None
+        openai_available = _openai_client is not None
+
+        # Get Pinecone stats if available
+        pinecone_stats = {}
+        if pinecone_available:
+            try:
+                stats = _pinecone_index.describe_index_stats()
+                pinecone_stats = {
+                    "total_vectors": stats.total_vector_count,
+                    "namespaces": {
+                        ns: stats.namespaces.get(ns, {}).get('vector_count', 0)
+                        for ns in stats.namespaces.keys()
+                    }
+                }
+            except Exception as e:
+                pinecone_stats = {"error": str(e)}
 
         return {
             "status": "healthy" if _knowledge_loaded else "loading",
-            "service": "Management Knowledge Service v4.0",
-            "version": "4.0.0",
-            "architecture": "Efficient - loads once at startup, no unpacking per request",
+            "service": "Management Knowledge Service v5.0",
+            "version": "5.0.0",
+            "architecture": "REAL Vector Search with OpenAI embeddings",
             "knowledge_loaded": _knowledge_loaded,
             "namespaces": namespaces_info,
-            "ai_providers": {
-                "anthropic": anthropic_available,
-                "openai": openai_available,
-                "preferred": os.getenv('PREFERRED_AI_PROVIDER', 'anthropic')
+            "search_capabilities": {
+                "vector_search": pinecone_available and openai_available,
+                "keyword_search": True,
+                "hybrid_search": True
             },
+            "services": {
+                "pinecone": pinecone_available,
+                "openai": openai_available
+            },
+            "pinecone_stats": pinecone_stats,
             "improvements": [
-                "✅ Loads chunks ONCE at startup (not on every request)",
-                "✅ Keeps all data in memory for instant access",
-                "✅ No fake embeddings - pure semantic keyword search",
-                "✅ Multi-tenant namespace support",
-                "✅ Fast response times"
+                "✅ REAL vector embeddings (OpenAI text-embedding-3-small)",
+                "✅ True semantic similarity search via Pinecone",
+                "✅ Hybrid search: Vector primary, keyword fallback",
+                "✅ Loads chunks ONCE at startup",
+                "✅ Multi-tenant namespace support"
             ]
         }
     except Exception as e:
@@ -230,7 +279,80 @@ async def health_check():
             "knowledge_loaded": _knowledge_loaded
         }
 
-def semantic_search(query: str, chunks: List[Dict], top_k: int = 5) -> List[SearchResult]:
+def vector_search(query: str, namespace: str, top_k: int = 5) -> Optional[List[SearchResult]]:
+    """
+    Real vector similarity search using Pinecone + OpenAI embeddings
+    Returns None if vector search unavailable (falls back to keyword search)
+    """
+    try:
+        # Check if vector search available
+        index = get_pinecone_index()
+        if not index:
+            logger.info("Pinecone not available, using keyword fallback")
+            return None
+
+        # Create real embedding for query
+        query_embedding = create_query_embedding(query)
+        if not query_embedding:
+            logger.info("Could not create query embedding, using keyword fallback")
+            return None
+
+        # Search Pinecone with REAL vector similarity
+        search_results = index.query(
+            vector=query_embedding,
+            top_k=top_k,
+            namespace=namespace,
+            include_metadata=True
+        )
+
+        if not search_results.matches:
+            logger.info(f"No vector results found for: {query}")
+            return None
+
+        # Get full content from in-memory cache
+        chunks_map = {c['id']: c for c in _knowledge_base.get(namespace, [])}
+
+        results = []
+        for match in search_results.matches:
+            # Get full content from cache
+            chunk = chunks_map.get(match.id)
+            if chunk:
+                results.append(SearchResult(
+                    id=match.id,
+                    content=chunk['content'],
+                    metadata={
+                        'source_file': chunk['metadata'].get('source_file', 'Unknown'),
+                        'framework': chunk['metadata'].get('framework', 'Unknown'),
+                        'category': chunk['metadata'].get('category', 'General'),
+                        'section': chunk['metadata'].get('section', ''),
+                        'word_count': chunk.get('word_count', 0)
+                    },
+                    score=float(match.score)
+                ))
+            else:
+                # Fallback to metadata preview if chunk not in cache
+                results.append(SearchResult(
+                    id=match.id,
+                    content=match.metadata.get('content_preview', 'Content not available'),
+                    metadata={
+                        'source_file': match.metadata.get('source_file', 'Unknown'),
+                        'framework': match.metadata.get('framework', 'Unknown'),
+                        'category': match.metadata.get('category', 'General'),
+                        'section': match.metadata.get('section', ''),
+                        'word_count': match.metadata.get('word_count', 0)
+                    },
+                    score=float(match.score)
+                ))
+
+        logger.info(f"✅ Vector search found {len(results)} results (scores: {[r.score for r in results[:3]]})")
+        return results
+
+    except Exception as e:
+        logger.error(f"Vector search failed: {e}")
+        return None
+
+
+def keyword_search(query: str, chunks: List[Dict], top_k: int = 5) -> List[SearchResult]:
     """
     Fast semantic keyword search through in-memory chunks.
     NO FILE LOADING - data already in memory from startup!
@@ -315,8 +437,10 @@ def semantic_search(query: str, chunks: List[Dict], top_k: int = 5) -> List[Sear
 @app.post("/api/search", response_model=SearchResponse)
 async def search_knowledge(request: SearchRequest):
     """
-    Search the knowledge base - FAST because data is already in memory!
-    No unpacking, no decompression, no fake embeddings.
+    Hybrid Search: Real vector similarity (primary) + keyword fallback
+
+    1. Try vector search with real OpenAI embeddings + Pinecone
+    2. Fall back to keyword search if vector unavailable
     """
     try:
         if not _knowledge_loaded:
@@ -330,10 +454,17 @@ async def search_knowledge(request: SearchRequest):
                 detail=f"Namespace '{request.namespace}' not found. Available: {list(_knowledge_base.keys())}"
             )
 
-        # Fast search through in-memory data
-        results = semantic_search(request.query, chunks, request.top_k)
+        # Try REAL vector search first
+        results = vector_search(request.query, request.namespace, request.top_k)
+        search_method = "vector"
 
-        logger.info(f"Search '{request.query}' in namespace '{request.namespace}': {len(results)} results")
+        # Fall back to keyword search if vector unavailable
+        if results is None:
+            logger.info(f"Vector search unavailable, using keyword search for: {request.query}")
+            results = keyword_search(request.query, chunks, request.top_k)
+            search_method = "keyword"
+
+        logger.info(f"Search '{request.query}' ({search_method}): {len(results)} results")
 
         return SearchResponse(
             results=results,
