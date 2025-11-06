@@ -296,8 +296,16 @@ async def search_by_keywords(query: str, top_k: int = 5) -> List[SearchResult]:
 
         results = []
         for match, score in scored_results[:top_k]:
-            # Try to get full content
-            content = await get_full_content_by_id(match.id)
+            # Try multiple ways to get content
+            content = match.metadata.get('content', '')
+
+            if not content:
+                # Try to get full content from local file (fallback)
+                content = await get_full_content_by_id(match.id)
+
+            if not content or content == "Content not available":
+                # Debug: Show what metadata is actually available
+                content = f"DEBUG: Available metadata keys: {list(match.metadata.keys())}"
 
             results.append(SearchResult(
                 id=match.id,
