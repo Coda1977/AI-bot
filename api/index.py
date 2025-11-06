@@ -401,7 +401,7 @@ Question: {question}
 Provide a professional management consultant response:"""
 
         response = client.messages.create(
-            model="claude-3-sonnet-20240229",
+            model="claude-3-5-sonnet-20241022",
             max_tokens=1500,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -410,6 +410,7 @@ Provide a professional management consultant response:"""
 
     except Exception as e:
         logger.error(f"Anthropic response generation failed: {e}")
+        logger.error(f"Anthropic error details: {type(e).__name__}: {str(e)}")
         # Fallback to OpenAI
         return await generate_openai_response(question, context)
 
