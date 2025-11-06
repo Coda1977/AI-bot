@@ -6,6 +6,7 @@ Uses current Pinecone SDK with integrated embeddings and modern patterns
 import json
 import os
 import logging
+import gzip
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 import time
@@ -204,8 +205,11 @@ async def health_check():
             "knowledge_loaded": _knowledge_loaded,
             "chunks_file_debug": {
                 "chunks_data_exists": Path("chunks_data.json").exists(),
+                "chunks_gz_exists": Path("chunks_data.json.gz").exists(),
                 "parent_chunks_exists": Path("../chunks_data.json").exists(),
+                "parent_chunks_gz_exists": Path("../chunks_data.json.gz").exists(),
                 "root_chunks_exists": Path("../../chunks_data.json").exists(),
+                "root_chunks_gz_exists": Path("../../chunks_data.json.gz").exists(),
                 "current_dir": str(Path.cwd()),
                 "api_files": [f.name for f in Path(".").iterdir() if f.name.startswith("chunks")],
                 "parent_files": [f.name for f in Path("..").iterdir() if f.name.startswith("chunks")] if Path("..").exists() else [],
@@ -263,12 +267,14 @@ async def search_by_keywords_improved(query: str, top_k: int = 5) -> List[Search
     """Enhanced keyword-based search with fuzzy matching and semantic understanding"""
     try:
         # Load local knowledge base for better search
-        knowledge_file = Path("chunks_data.json")
+        knowledge_file = Path("chunks_data.json.gz")
         if not knowledge_file.exists():
             # Try alternative paths
             alt_paths = [
+                Path("../chunks_data.json.gz"),
+                Path("../../chunks_data.json.gz"),  # From Vercel /var/task
                 Path("../chunks_data.json"),
-                Path("../../chunks_data.json"),  # From Vercel /var/task
+                Path("../../chunks_data.json"),
                 Path("output/chromadb_data/chunks_data.json"),
             ]
             for alt_path in alt_paths:
@@ -279,8 +285,13 @@ async def search_by_keywords_improved(query: str, top_k: int = 5) -> List[Search
                 logger.warning("Knowledge base file not found for improved search")
                 return await search_by_pinecone_metadata(query, top_k)
 
-        with open(knowledge_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        # Load JSON data (compressed or uncompressed)
+        if str(knowledge_file).endswith('.gz'):
+            with gzip.open(knowledge_file, 'rt', encoding='utf-8') as f:
+                data = json.load(f)
+        else:
+            with open(knowledge_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
 
         chunks = data.get('chunks', [])
         query_words = query.lower().split()
@@ -503,8 +514,10 @@ async def get_full_content_by_id(chunk_id: str) -> str:
         if not knowledge_file.exists():
             # Try alternative paths
             alt_paths = [
+                Path("../chunks_data.json.gz"),
+                Path("../../chunks_data.json.gz"),  # From Vercel /var/task
                 Path("../chunks_data.json"),
-                Path("../../chunks_data.json"),  # From Vercel /var/task
+                Path("../../chunks_data.json"),
                 Path("output/chromadb_data/chunks_data.json"),
             ]
             for alt_path in alt_paths:
@@ -514,8 +527,13 @@ async def get_full_content_by_id(chunk_id: str) -> str:
             else:
                 return "Content not available"
 
-        with open(knowledge_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        # Load JSON data (compressed or uncompressed)
+        if str(knowledge_file).endswith('.gz'):
+            with gzip.open(knowledge_file, 'rt', encoding='utf-8') as f:
+                data = json.load(f)
+        else:
+            with open(knowledge_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
 
         chunks = data.get('chunks', [])
         for chunk in chunks:
