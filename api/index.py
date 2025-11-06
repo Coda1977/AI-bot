@@ -251,60 +251,65 @@ def create_anthropic_embeddings(text: str):
         return numbers[:1536]
 
 async def search_by_keywords(query: str, top_k: int = 5) -> List[SearchResult]:
-    """Search knowledge base using keyword matching"""
+    """Search knowledge base using keyword matching via Pinecone metadata"""
     try:
-        knowledge_file = Path("output/chromadb_data/chunks_data.json")
-        if not knowledge_file.exists():
-            # Try alternative paths
-            alt_paths = [
-                Path("../output/chromadb_data/chunks_data.json"),
-                Path("chunks_data.json"),
-            ]
-            for alt_path in alt_paths:
-                if alt_path.exists():
-                    knowledge_file = alt_path
-                    break
-            else:
-                logger.warning("Knowledge base file not found for keyword search")
-                return []
+        # Since we can't access local files in Vercel, use Pinecone's metadata search
+        index = get_pinecone_index()
+        namespace = "management-knowledge"
 
-        with open(knowledge_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-
-        chunks = data.get('chunks', [])
+        # Try to get some vectors and examine their metadata
+        # This is a workaround - we'll search by metadata rather than content
         query_words = query.lower().split()
 
-        # Score chunks based on keyword matches
-        scored_chunks = []
-        for chunk in chunks:
-            content = chunk['content'].lower()
+        # Create a dummy embedding for the search
+        dummy_embedding = [0.1] * 1536  # Simple dummy vector
+
+        # Search with a broader scope
+        search_results = index.query(
+            vector=dummy_embedding,
+            top_k=50,  # Get more results to filter
+            include_metadata=True,
+            namespace=namespace
+        )
+
+        # Filter results based on keyword matches in metadata
+        scored_results = []
+        for match in search_results.matches:
+            metadata = match.metadata or {}
+            content = metadata.get('content', '')
+            source_file = metadata.get('source_file', '').lower()
+
             score = 0
-
-            # Calculate score based on keyword matches
+            # Score based on source file matches (since content might not be in metadata)
             for word in query_words:
-                if len(word) > 2:  # Skip very short words
-                    count = content.count(word)
-                    score += count * len(word)  # Weight by word length
+                if len(word) > 2:
+                    if word in source_file:
+                        score += len(word) * 5  # Weight filename matches highly
+                    if word in content.lower():
+                        score += content.lower().count(word) * len(word)
 
-            if score > 0:
-                scored_chunks.append((chunk, score))
+            if score > 0 or 'feedback' in source_file:  # Special case for feedback
+                scored_results.append((match, score))
 
-        # Sort by score and return top results
-        scored_chunks.sort(key=lambda x: x[1], reverse=True)
+        # Sort by score
+        scored_results.sort(key=lambda x: x[1], reverse=True)
 
         results = []
-        for chunk, score in scored_chunks[:top_k]:
+        for match, score in scored_results[:top_k]:
+            # Try to get full content
+            content = await get_full_content_by_id(match.id)
+
             results.append(SearchResult(
-                id=chunk['id'],
-                content=chunk['content'],
+                id=match.id,
+                content=content,
                 metadata={
-                    'source_file': chunk['metadata'].get('source_file', 'Unknown'),
-                    'framework': chunk['metadata'].get('framework', 'Unknown'),
-                    'category': chunk['metadata'].get('category', 'General'),
-                    'section': chunk['metadata'].get('section', ''),
-                    'word_count': chunk.get('word_count', 0)
+                    'source_file': match.metadata.get('source_file', 'Unknown'),
+                    'framework': match.metadata.get('framework', 'Unknown'),
+                    'category': match.metadata.get('category', 'General'),
+                    'section': match.metadata.get('section', ''),
+                    'word_count': match.metadata.get('word_count', 0)
                 },
-                score=float(score) / 100.0  # Normalize score
+                score=float(score) / 100.0 if score > 0 else float(match.score)
             ))
 
         return results
