@@ -169,7 +169,7 @@ async def test_anthropic():
             return {"error": "No Anthropic client available"}
 
         response = client.messages.create(
-            model="claude-3-5-sonnet-20240620",
+            model="claude-3-haiku-20240307",
             max_tokens=100,
             messages=[{"role": "user", "content": "Say 'Anthropic is working' if you can respond"}]
         )
@@ -418,7 +418,7 @@ Question: {question}
 Provide a professional management consultant response:"""
 
         response = client.messages.create(
-            model="claude-3-5-sonnet-20240620",
+            model="claude-3-haiku-20240307",
             max_tokens=1500,
             messages=[{"role": "user", "content": prompt}]
         )
