@@ -254,12 +254,12 @@ async def search_by_keywords_improved(query: str, top_k: int = 5) -> List[Search
     """Enhanced keyword-based search with fuzzy matching and semantic understanding"""
     try:
         # Load local knowledge base for better search
-        knowledge_file = Path("output/chromadb_data/chunks_data.json")
+        knowledge_file = Path("chunks_data.json")
         if not knowledge_file.exists():
             # Try alternative paths
             alt_paths = [
-                Path("../output/chromadb_data/chunks_data.json"),
-                Path("chunks_data.json"),
+                Path("../chunks_data.json"),
+                Path("output/chromadb_data/chunks_data.json"),
             ]
             for alt_path in alt_paths:
                 if alt_path.exists():
@@ -489,12 +489,12 @@ async def get_full_content_by_id(chunk_id: str) -> str:
     """Get full content for a chunk ID from the knowledge base file"""
     try:
         # Load knowledge base to get full content
-        knowledge_file = Path("output/chromadb_data/chunks_data.json")
+        knowledge_file = Path("chunks_data.json")
         if not knowledge_file.exists():
             # Try alternative paths
             alt_paths = [
-                Path("../output/chromadb_data/chunks_data.json"),
-                Path("chunks_data.json"),
+                Path("../chunks_data.json"),
+                Path("output/chromadb_data/chunks_data.json"),
             ]
             for alt_path in alt_paths:
                 if alt_path.exists():

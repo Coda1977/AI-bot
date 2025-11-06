@@ -1,1 +1,26 @@
 .vercel
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+rag_env/
+embedding_env/
+
+# Environment
+.env
+
+# Logs
+*.log
+
+# Large data files (except api/chunks_data.json which is needed for Vercel)
+materials/
+output/
+
+# Dependencies
+pinecone-cli
+pinecone-cli.tar.gz
+
+# Temporary files
+=*
