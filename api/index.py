@@ -204,8 +204,12 @@ async def health_check():
             "knowledge_loaded": _knowledge_loaded,
             "chunks_file_debug": {
                 "chunks_data_exists": Path("chunks_data.json").exists(),
+                "parent_chunks_exists": Path("../chunks_data.json").exists(),
+                "root_chunks_exists": Path("../../chunks_data.json").exists(),
                 "current_dir": str(Path.cwd()),
-                "api_files": [f.name for f in Path(".").iterdir() if f.name.startswith("chunks")]
+                "api_files": [f.name for f in Path(".").iterdir() if f.name.startswith("chunks")],
+                "parent_files": [f.name for f in Path("..").iterdir() if f.name.startswith("chunks")] if Path("..").exists() else [],
+                "root_files": [f.name for f in Path("../..").iterdir() if f.name.startswith("chunks")] if Path("../..").exists() else []
             }
         }
     except Exception as e:
@@ -264,6 +268,7 @@ async def search_by_keywords_improved(query: str, top_k: int = 5) -> List[Search
             # Try alternative paths
             alt_paths = [
                 Path("../chunks_data.json"),
+                Path("../../chunks_data.json"),  # From Vercel /var/task
                 Path("output/chromadb_data/chunks_data.json"),
             ]
             for alt_path in alt_paths:
@@ -499,6 +504,7 @@ async def get_full_content_by_id(chunk_id: str) -> str:
             # Try alternative paths
             alt_paths = [
                 Path("../chunks_data.json"),
+                Path("../../chunks_data.json"),  # From Vercel /var/task
                 Path("output/chromadb_data/chunks_data.json"),
             ]
             for alt_path in alt_paths:
