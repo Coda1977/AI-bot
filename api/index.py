@@ -7,6 +7,7 @@ import json
 import os
 import logging
 import gzip
+import base64
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 import time
@@ -71,6 +72,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def _check_embedded_chunks():
+    """Check if embedded chunks are available"""
+    try:
+        from embedded_chunks import CHUNKS_DATA_B64
+        return True
+    except ImportError:
+        return False
 
 def get_pinecone_client():
     """Initialize Pinecone client using current 2025 API"""
@@ -204,16 +213,11 @@ async def health_check():
             },
             "knowledge_loaded": _knowledge_loaded,
             "chunks_file_debug": {
+                "embedded_chunks_available": _check_embedded_chunks(),
                 "chunks_data_exists": Path("chunks_data.json").exists(),
                 "chunks_gz_exists": Path("chunks_data.json.gz").exists(),
-                "parent_chunks_exists": Path("../chunks_data.json").exists(),
-                "parent_chunks_gz_exists": Path("../chunks_data.json.gz").exists(),
-                "root_chunks_exists": Path("../../chunks_data.json").exists(),
-                "root_chunks_gz_exists": Path("../../chunks_data.json.gz").exists(),
                 "current_dir": str(Path.cwd()),
-                "api_files": [f.name for f in Path(".").iterdir() if f.name.startswith("chunks")],
-                "parent_files": [f.name for f in Path("..").iterdir() if f.name.startswith("chunks")] if Path("..").exists() else [],
-                "root_files": [f.name for f in Path("../..").iterdir() if f.name.startswith("chunks")] if Path("../..").exists() else []
+                "api_files": [f.name for f in Path(".").iterdir() if f.name.startswith(("chunks", "embedded"))]
             }
         }
     except Exception as e:
@@ -266,32 +270,41 @@ def create_anthropic_embeddings(text: str):
 async def search_by_keywords_improved(query: str, top_k: int = 5) -> List[SearchResult]:
     """Enhanced keyword-based search with fuzzy matching and semantic understanding"""
     try:
-        # Load local knowledge base for better search
-        knowledge_file = Path("chunks_data.json.gz")
-        if not knowledge_file.exists():
-            # Try alternative paths
-            alt_paths = [
-                Path("../chunks_data.json.gz"),
-                Path("../../chunks_data.json.gz"),  # From Vercel /var/task
-                Path("../chunks_data.json"),
-                Path("../../chunks_data.json"),
-                Path("output/chromadb_data/chunks_data.json"),
-            ]
-            for alt_path in alt_paths:
-                if alt_path.exists():
-                    knowledge_file = alt_path
-                    break
-            else:
-                logger.warning("Knowledge base file not found for improved search")
-                return await search_by_pinecone_metadata(query, top_k)
+        # Try to load embedded chunks data first (for Vercel deployment)
+        try:
+            from embedded_chunks import CHUNKS_DATA_B64
+            # Decode base64 and decompress
+            gzipped_data = base64.b64decode(CHUNKS_DATA_B64)
+            data = json.loads(gzip.decompress(gzipped_data).decode('utf-8'))
+            logger.info("Loaded chunks from embedded base64 data")
+        except ImportError:
+            # Fallback to file-based loading for local development
+            logger.info("Embedded chunks not available, trying file system")
+            knowledge_file = Path("chunks_data.json.gz")
+            if not knowledge_file.exists():
+                # Try alternative paths
+                alt_paths = [
+                    Path("../chunks_data.json.gz"),
+                    Path("../../chunks_data.json.gz"),  # From Vercel /var/task
+                    Path("../chunks_data.json"),
+                    Path("../../chunks_data.json"),
+                    Path("output/chromadb_data/chunks_data.json"),
+                ]
+                for alt_path in alt_paths:
+                    if alt_path.exists():
+                        knowledge_file = alt_path
+                        break
+                else:
+                    logger.warning("Knowledge base file not found for improved search")
+                    return await search_by_pinecone_metadata(query, top_k)
 
-        # Load JSON data (compressed or uncompressed)
-        if str(knowledge_file).endswith('.gz'):
-            with gzip.open(knowledge_file, 'rt', encoding='utf-8') as f:
-                data = json.load(f)
-        else:
-            with open(knowledge_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            # Load JSON data (compressed or uncompressed)
+            if str(knowledge_file).endswith('.gz'):
+                with gzip.open(knowledge_file, 'rt', encoding='utf-8') as f:
+                    data = json.load(f)
+            else:
+                with open(knowledge_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
 
         chunks = data.get('chunks', [])
         query_words = query.lower().split()
@@ -509,31 +522,38 @@ async def search_knowledge(request: SearchRequest):
 async def get_full_content_by_id(chunk_id: str) -> str:
     """Get full content for a chunk ID from the knowledge base file"""
     try:
-        # Load knowledge base to get full content
-        knowledge_file = Path("chunks_data.json")
-        if not knowledge_file.exists():
-            # Try alternative paths
-            alt_paths = [
-                Path("../chunks_data.json.gz"),
-                Path("../../chunks_data.json.gz"),  # From Vercel /var/task
-                Path("../chunks_data.json"),
-                Path("../../chunks_data.json"),
-                Path("output/chromadb_data/chunks_data.json"),
-            ]
-            for alt_path in alt_paths:
-                if alt_path.exists():
-                    knowledge_file = alt_path
-                    break
-            else:
-                return "Content not available"
+        # Try to load embedded chunks data first (for Vercel deployment)
+        try:
+            from embedded_chunks import CHUNKS_DATA_B64
+            # Decode base64 and decompress
+            gzipped_data = base64.b64decode(CHUNKS_DATA_B64)
+            data = json.loads(gzip.decompress(gzipped_data).decode('utf-8'))
+        except ImportError:
+            # Fallback to file-based loading for local development
+            knowledge_file = Path("chunks_data.json")
+            if not knowledge_file.exists():
+                # Try alternative paths
+                alt_paths = [
+                    Path("../chunks_data.json.gz"),
+                    Path("../../chunks_data.json.gz"),  # From Vercel /var/task
+                    Path("../chunks_data.json"),
+                    Path("../../chunks_data.json"),
+                    Path("output/chromadb_data/chunks_data.json"),
+                ]
+                for alt_path in alt_paths:
+                    if alt_path.exists():
+                        knowledge_file = alt_path
+                        break
+                else:
+                    return "Content not available"
 
-        # Load JSON data (compressed or uncompressed)
-        if str(knowledge_file).endswith('.gz'):
-            with gzip.open(knowledge_file, 'rt', encoding='utf-8') as f:
-                data = json.load(f)
-        else:
-            with open(knowledge_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            # Load JSON data (compressed or uncompressed)
+            if str(knowledge_file).endswith('.gz'):
+                with gzip.open(knowledge_file, 'rt', encoding='utf-8') as f:
+                    data = json.load(f)
+            else:
+                with open(knowledge_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
 
         chunks = data.get('chunks', [])
         for chunk in chunks:
