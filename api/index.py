@@ -530,13 +530,10 @@ async def root():
     }
 
 
-# For Vercel serverless
-def handler(request, response):
-    """Vercel serverless handler"""
-    return app(request, response)
-
-
 # Main entry point for local development
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
+# For Vercel: Export the app directly (Vercel auto-detects FastAPI apps)
+# No handler function needed - Vercel uses the 'app' object automatically
