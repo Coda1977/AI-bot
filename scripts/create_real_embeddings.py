@@ -109,7 +109,18 @@ def upload_to_pinecone(chunks: List[Dict], namespace: str = "management-knowledg
 
         vectors = []
         for chunk in batch:
-            # Store compact metadata (Pinecone has metadata size limits)
+            # Store metadata (Pinecone limit: 40KB per vector)
+            # Store more content to reduce dependency on local cache
+            content_text = chunk['content']
+
+            # Try to store full content if small enough, otherwise store substantial preview
+            # Aim for ~3000 chars (leaves room for other metadata within 40KB limit)
+            if len(content_text) <= 3000:
+                stored_content = content_text
+            else:
+                # Store first 3000 chars with ellipsis
+                stored_content = content_text[:2997] + "..."
+
             vectors.append({
                 "id": chunk['id'],
                 "values": chunk['embedding'],
@@ -119,7 +130,8 @@ def upload_to_pinecone(chunks: List[Dict], namespace: str = "management-knowledg
                     "category": chunk['metadata'].get('category', '')[:100],
                     "section": chunk['metadata'].get('section', '')[:200],
                     "word_count": chunk.get('word_count', 0),
-                    "content_preview": chunk['content'][:500]  # First 500 chars
+                    "content": stored_content,  # Full content or substantial preview
+                    "content_truncated": len(content_text) > 3000
                 }
             })
 

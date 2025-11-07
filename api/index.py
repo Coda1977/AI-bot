@@ -317,6 +317,7 @@ def vector_search(query: str, namespace: str, top_k: int = 5) -> Optional[List[S
             # Get full content from cache
             chunk = chunks_map.get(match.id)
             if chunk:
+                # Use cached full content (best option)
                 results.append(SearchResult(
                     id=match.id,
                     content=chunk['content'],
@@ -330,16 +331,25 @@ def vector_search(query: str, namespace: str, top_k: int = 5) -> Optional[List[S
                     score=float(match.score)
                 ))
             else:
-                # Fallback to metadata preview if chunk not in cache
+                # Fallback to Pinecone metadata (safe handling for None)
+                metadata = match.metadata or {}  # Guard against None
+                # Try 'content' first (new format), fallback to 'content_preview' (old format)
+                content = metadata.get('content', metadata.get('content_preview', 'Content not available'))
+
+                is_truncated = metadata.get('content_truncated', False)
+                if is_truncated:
+                    logger.info(f"Chunk {match.id} using truncated content from Pinecone metadata")
+
                 results.append(SearchResult(
                     id=match.id,
-                    content=match.metadata.get('content_preview', 'Content not available'),
+                    content=content,
                     metadata={
-                        'source_file': match.metadata.get('source_file', 'Unknown'),
-                        'framework': match.metadata.get('framework', 'Unknown'),
-                        'category': match.metadata.get('category', 'General'),
-                        'section': match.metadata.get('section', ''),
-                        'word_count': match.metadata.get('word_count', 0)
+                        'source_file': metadata.get('source_file', 'Unknown'),
+                        'framework': metadata.get('framework', 'Unknown'),
+                        'category': metadata.get('category', 'General'),
+                        'section': metadata.get('section', ''),
+                        'word_count': metadata.get('word_count', 0),
+                        'content_truncated': is_truncated
                     },
                     score=float(match.score)
                 ))
@@ -440,29 +450,29 @@ async def search_knowledge(request: SearchRequest):
     Hybrid Search: Real vector similarity (primary) + keyword fallback
 
     1. Try vector search with real OpenAI embeddings + Pinecone
-    2. Fall back to keyword search if vector unavailable
+    2. Fall back to keyword search if vector unavailable OR namespace not cached
+
+    Multi-tenant: Works even if namespace not in local cache (uses Pinecone directly)
     """
     try:
-        if not _knowledge_loaded:
-            raise HTTPException(status_code=503, detail="Knowledge base not loaded yet")
-
-        # Get chunks for this namespace
-        chunks = _knowledge_base.get(request.namespace)
-        if not chunks:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Namespace '{request.namespace}' not found. Available: {list(_knowledge_base.keys())}"
-            )
-
-        # Try REAL vector search first
+        # Try REAL vector search first (works for any namespace in Pinecone)
         results = vector_search(request.query, request.namespace, request.top_k)
         search_method = "vector"
 
         # Fall back to keyword search if vector unavailable
         if results is None:
-            logger.info(f"Vector search unavailable, using keyword search for: {request.query}")
-            results = keyword_search(request.query, chunks, request.top_k)
-            search_method = "keyword"
+            # Check if we have this namespace in local cache for keyword search
+            chunks = _knowledge_base.get(request.namespace)
+            if chunks:
+                logger.info(f"Vector search unavailable, using keyword search for: {request.query}")
+                results = keyword_search(request.query, chunks, request.top_k)
+                search_method = "keyword"
+            else:
+                # Neither vector nor keyword available for this namespace
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Namespace '{request.namespace}' not found in cache and vector search unavailable. Available cached namespaces: {list(_knowledge_base.keys())}"
+                )
 
         logger.info(f"Search '{request.query}' ({search_method}): {len(results)} results")
 
