@@ -128,12 +128,22 @@ def load_chunks_once() -> Dict[str, List[Dict]]:
 
         chunks = data.get('chunks', [])
 
-        # Organize by namespace (for multi-tenancy support)
-        # For now, all chunks go to default namespace
-        _knowledge_base['management-knowledge'] = chunks
+        # Load chunks into cache
+        # Check if chunks have namespace info, otherwise use default
+        namespace_chunks = {}
+        for chunk in chunks:
+            ns = chunk.get('namespace', 'management-knowledge')  # Default namespace
+            if ns not in namespace_chunks:
+                namespace_chunks[ns] = []
+            namespace_chunks[ns].append(chunk)
+
+        # Store all namespaces in cache
+        _knowledge_base.update(namespace_chunks)
         _knowledge_loaded = True
 
-        logger.info(f"✅ Knowledge base loaded ONCE at startup: {len(chunks)} chunks in memory")
+        total_chunks = sum(len(chunks) for chunks in namespace_chunks.values())
+        logger.info(f"✅ Knowledge base loaded ONCE at startup: {total_chunks} chunks across {len(namespace_chunks)} namespace(s)")
+        logger.info(f"   Namespaces: {list(namespace_chunks.keys())}")
         return _knowledge_base
 
     except Exception as e:
@@ -314,45 +324,61 @@ def vector_search(query: str, namespace: str, top_k: int = 5) -> Optional[List[S
 
         results = []
         for match in search_results.matches:
-            # Get full content from cache
-            chunk = chunks_map.get(match.id)
-            if chunk:
-                # Use cached full content (best option)
-                results.append(SearchResult(
-                    id=match.id,
-                    content=chunk['content'],
-                    metadata={
-                        'source_file': chunk['metadata'].get('source_file', 'Unknown'),
-                        'framework': chunk['metadata'].get('framework', 'Unknown'),
-                        'category': chunk['metadata'].get('category', 'General'),
-                        'section': chunk['metadata'].get('section', ''),
-                        'word_count': chunk.get('word_count', 0)
-                    },
-                    score=float(match.score)
-                ))
-            else:
-                # Fallback to Pinecone metadata (safe handling for None)
-                metadata = match.metadata or {}  # Guard against None
-                # Try 'content' first (new format), fallback to 'content_preview' (old format)
-                content = metadata.get('content', metadata.get('content_preview', 'Content not available'))
+            try:
+                # Get full content from cache (best option)
+                chunk = chunks_map.get(match.id)
+                if chunk:
+                    results.append(SearchResult(
+                        id=match.id,
+                        content=chunk['content'],
+                        metadata={
+                            'source_file': chunk['metadata'].get('source_file', 'Unknown'),
+                            'framework': chunk['metadata'].get('framework', 'Unknown'),
+                            'category': chunk['metadata'].get('category', 'General'),
+                            'section': chunk['metadata'].get('section', ''),
+                            'word_count': chunk.get('word_count', 0)
+                        },
+                        score=float(match.score)
+                    ))
+                else:
+                    # Fallback to Pinecone metadata (safe handling for None/missing)
+                    # Guard against None, missing attribute, or empty metadata
+                    try:
+                        metadata = getattr(match, 'metadata', None) or {}
+                    except AttributeError:
+                        metadata = {}
 
-                is_truncated = metadata.get('content_truncated', False)
-                if is_truncated:
-                    logger.info(f"Chunk {match.id} using truncated content from Pinecone metadata")
+                    if not metadata:
+                        logger.warning(f"Chunk {match.id} in namespace {namespace} has no metadata and not in cache - skipping")
+                        continue  # Skip this result entirely if no content available
 
-                results.append(SearchResult(
-                    id=match.id,
-                    content=content,
-                    metadata={
-                        'source_file': metadata.get('source_file', 'Unknown'),
-                        'framework': metadata.get('framework', 'Unknown'),
-                        'category': metadata.get('category', 'General'),
-                        'section': metadata.get('section', ''),
-                        'word_count': metadata.get('word_count', 0),
-                        'content_truncated': is_truncated
-                    },
-                    score=float(match.score)
-                ))
+                    # Try multiple fields for content (new format, old format, fallback)
+                    content = metadata.get('content') or metadata.get('content_preview') or metadata.get('text')
+
+                    if not content:
+                        logger.warning(f"Chunk {match.id} has metadata but no content field - skipping")
+                        continue  # Skip if metadata exists but has no content
+
+                    is_truncated = metadata.get('content_truncated', False)
+                    if is_truncated:
+                        logger.info(f"Chunk {match.id} using truncated content from Pinecone metadata")
+
+                    results.append(SearchResult(
+                        id=match.id,
+                        content=content,
+                        metadata={
+                            'source_file': metadata.get('source_file', 'Unknown'),
+                            'framework': metadata.get('framework', 'Unknown'),
+                            'category': metadata.get('category', 'General'),
+                            'section': metadata.get('section', ''),
+                            'word_count': metadata.get('word_count', 0),
+                            'content_truncated': is_truncated
+                        },
+                        score=float(match.score)
+                    ))
+            except Exception as e:
+                logger.error(f"Error processing vector match {match.id}: {e}")
+                continue  # Skip problematic results, don't crash entire search
 
         logger.info(f"✅ Vector search found {len(results)} results (scores: {[r.score for r in results[:3]]})")
         return results
